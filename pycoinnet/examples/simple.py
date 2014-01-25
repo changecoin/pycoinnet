@@ -13,7 +13,12 @@ import random
 import struct
 import time
 
+from pycoin.convention import satoshi_to_btc
+from pycoin.serialize import b2h_rev
 from pycoinnet.BitcoinPeerProtocol import BitcoinPeerProtocol
+
+
+ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
 
 class AddressDB(object):
@@ -93,16 +98,15 @@ def get_msg_version_parameters_default(transport):
     )
 
 
-def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections):
-    magic_header = binascii.unhexlify('0B110907')
+def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, mempool):
+    magic_header = binascii.unhexlify('0B110907')  # testnet3
+    magic_header = binascii.unhexlify('F9BEB4D9')
     host, port = address_db.next_address()
     logging.info("connecting to %s port %d", host, port)
     try:
         transport, protocol = yield from event_loop.create_connection(
             lambda: BitcoinPeerProtocol(magic_header),
             host=host, port=port)
-        address_db.add_address(host, port, int(time.time()))
-        connections.add(transport)
     except Exception:
         logging.error("failed to connect to %s:%d", host, port)
         address_db.remove_address(host, port)
@@ -110,34 +114,104 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections):
         return
 
     try:
+        address_db.add_address(host, port, int(time.time()))
+        connections.add(transport)
         d = get_msg_version_parameters_default(protocol.transport)
         protocol.send_msg_version(**d)
         message_name, data = yield from protocol.next_message()
-        print(message_name, data)
         if message_name != 'version':
             raise Exception("missing version")
         protocol.send_msg_verack()
-        protocol.send_msg_getaddr()
+        #protocol.send_msg_getaddr()
+
+        ping_nonces = set()
+        def heartbeat():
+            while True:
+                now = time.time()
+                if protocol.last_message_timestamp + 60 < now:
+                    # we need to ping!
+                    nonce = struct.unpack("!Q", os.urandom(8))[0]
+                    protocol.send_msg_ping(nonce)
+                    logging.debug("sending ping %d", nonce)
+                    ping_nonces.add(nonce)
+                    yield from asyncio.sleep(30)
+                    if nonce in ping_nonces:
+                        # gotta hang up!
+                        transport.close()
+                        return
+                yield from asyncio.sleep(protocol.last_message_timestamp + 60 - now)
+
+        asyncio.Task(heartbeat())
+
         while True:
             message_name, data = yield from protocol.next_message()
+            print("==>", message_name, str(data)[:77])
+
+            if message_name == 'ping':
+                print("got ping %s" % data)
+                protocol.send_msg_pong(data["nonce"])
+
+            if message_name == 'pong':
+                print("got pong %s" % data)
+                ping_nonces.discard(data["nonce"])
+
             if message_name == 'addr':
                 address_db.add_addresses(
                     (timestamp, address.ip_address.exploded, address.port)
                     for timestamp, address in data["date_address_tuples"])
                 address_db.save()
+                #break
+
+            if message_name == 'inv':
+                print("inv : %s" % data)
+                items = data["items"]
+                to_fetch = [item for item in items if item.data not in mempool]
+                if to_fetch:
+                    protocol.send_msg_getdata(to_fetch)
+
+            if message_name == 'tx':
+                tx = data["tx"]
+                the_hash = tx.hash()
+                if not the_hash in mempool:
+                    print("\nTx ID %s" % b2h_rev(the_hash))
+                    mempool[the_hash] = tx
+                    for idx, tx_out in enumerate(tx.txs_out):
+                        ba = tx_out.bitcoin_address()
+                        if ba:
+                            print("%d: %s %s BTC" % (idx, ba, satoshi_to_btc(tx_out.coin_value)))
+                        else:
+                            print("can't figure out destination of tx_out id %d" % idx)
+
+            if message_name == 'block':
+                block = data["block"]
+                the_hash = block.hash()
+                mempool[the_hash] = block
+                for tx in block.txs:
+                    the_hash = tx.hash()
+                    print("\nTx ID %s" % b2h_rev(the_hash))
+                    for idx, tx_out in enumerate(tx.txs_out):
+                        ba = tx_out.bitcoin_address()
+                        if ba:
+                            print("%d: %s %s BTC" % (idx, ba, satoshi_to_btc(tx_out.coin_value)))
+                        else:
+                            print("can't figure out destination of tx_out id %d" % idx)
+
+
     except Exception:
         logging.exception("problem on %s:%d", host, port)
+    transport.close()
     connections.remove(transport)
 
 
-def keep_minimum_connections(event_loop, min_connection_count=3):
+def keep_minimum_connections(event_loop, min_connection_count=6):
     connections = set()
     address_db = AddressDB("addresses.txt")
+    mempool = {}
     while 1:
         logging.debug("checking connection count (currently %d)", len(connections))
         difference = min_connection_count - len(connections)
-        for i in range(difference*3):
-            asyncio.Task(simple_clientbitcoin_peer_protocol(event_loop, address_db, connections))
+        for i in range(difference+4):
+            asyncio.Task(simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, mempool))
         yield from asyncio.sleep(10)
 
 

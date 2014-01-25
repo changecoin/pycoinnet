@@ -27,6 +27,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.transport = transport
         self.reader = BitcoinPeerStreamReader()
         self.messages = asyncio.queues.Queue()
+        self.last_message_timestamp = time.time()
         self._request_handle = asyncio.async(self.start())
 
     def data_received(self, data):
@@ -45,6 +46,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         while True:
             try:
                 yield from self.parse_next_message()
+                self.last_message_timestamp = time.time()
             except Exception:
                 logging.exception("message parse failed")
 
