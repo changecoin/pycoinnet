@@ -1,4 +1,4 @@
-import asyncio
+import asyncio.queues
 import binascii
 import datetime
 import io
@@ -18,74 +18,38 @@ init_bitcoin_streamer()
 
 class BitcoinPeerProtocol(asyncio.Protocol):
 
-    def magic_header(self):
-        return binascii.unhexlify('f9beb4d9')
+    def __init__(self, magic_header=binascii.unhexlify('0B110907'), *args, **kwargs):
+        super(BitcoinPeerProtocol, self).__init__(*args, **kwargs)
+        self.magic_header = magic_header
 
     def connection_made(self, transport):
         logging.debug("connection made %s", transport)
         self.transport = transport
         self.reader = BitcoinPeerStreamReader()
-        self._magic_header = self.magic_header()
-        self._request_handle = asyncio.Task(self.start())
+        self.messages = asyncio.queues.Queue()
+        self._request_handle = asyncio.async(self.start())
 
     def data_received(self, data):
         self.reader.feed_data(data)
 
-    def write_message(self, message_type, message_data=b''):
+    def send_message(self, message_type, message_data=b''):
         message_type_padded = (message_type+(b'\0'*12))[:12]
         message_size = struct.pack("<L", len(message_data))
         message_checksum = encoding.double_sha256(message_data)[:4]
-        packet = b"".join([self._magic_header, message_type_padded, message_size, message_checksum, message_data])
+        packet = b"".join([self.magic_header, message_type_padded, message_size, message_checksum, message_data])
         logging.debug("sending message %s [%d bytes]", message_type.decode("utf8"), len(packet))
         self.transport.write(packet)
 
-    def get_msg_version_parameters_default(self):
-        # this must return a dictionary with:
-        #  version (integer)
-        #  subversion (bytes, like b"/Satoshi:0.7.2/")
-        #  node_type (must be 1)
-        #  current time (seconds since epoch)
-        #  remote_address
-        #  remote_listen_port
-        #  local_address
-        #  local_listen_port
-        #  nonce (32 bit)
-        #  last_block_index
-        remote_address, remote_port = self.transport.get_extra_info("socket").getpeername()
-        return dict(
-            version=70001,
-            subversion=b"/Notoshi/",
-            node_type=1,
-            current_time=int(time.time()),
-            remote_address=remote_address,
-            remote_listen_port=remote_port,
-            local_address="127.0.0.1",
-            local_listen_port=6111,
-            nonce=struct.unpack("!Q", os.urandom(8))[0],
-            last_block_index=0,
-        )
-
-    def get_msg_version_parameters(self):
-        return {}
-
     @asyncio.coroutine
     def start(self):
-        d = self.get_msg_version_parameters_default()
-        d.update(self.get_msg_version_parameters())
-        self.send_msg_version(**d)
-
-        self.ping_nonce_handle_lookup = {}
         while True:
-            # schedule ping
             try:
-                ping_handle = asyncio.get_event_loop().call_later(60, self.do_ping)
                 yield from self.parse_next_message()
-                ping_handle.cancel()
             except Exception:
                 logging.exception("message parse failed")
 
     def parse_next_message(self):
-        message_name, message_data = yield from self.reader.read_message(self._magic_header)
+        message_name, message_data = yield from self.reader.read_message(self.magic_header)
 
         logging.debug("message: %s (%d byte payload)", message_name, len(message_data))
 
@@ -113,7 +77,8 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             'alert': ("payload signature", "SS", alert_supplement),
             'tx': ("tx", "T"),
             'block': ("block", "B"),
-            'pong': ("nonce", "L"),
+            'ping': ("nonce", "Q"),
+            'pong': ("nonce", "Q"),
         }
 
         the_tuple = PARSE_PAIR.get(message_name)
@@ -127,47 +92,10 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             d = bitcoin_streamer.parse_as_dict(
                 prop_names.split(), prop_struct, io.BytesIO(message_data))
             post_f(d)
-            f = getattr(self, "handle_msg_%s" % message_name)
-            f(**d)
+            yield from self.messages.put((message_name, d))
 
-    def do_ping(self):
-        def pong_missing():
-            logging.debug("pong missing with nonce %s, disconnecting", binascii.hexlify(nonce))
-            self.transport.close()
-
-        nonce = os.urandom(8)
-        self.send_msg_ping(nonce)
-        logging.debug("sending ping with nonce %s", binascii.hexlify(nonce))
-        # look for a pong with the given nonce
-        handle = asyncio.get_event_loop().call_later(60, pong_missing)
-        self.ping_nonce_handle_lookup[nonce] = handle
-
-    def handle_msg_pong(self, nonce):
-        logging.debug("got pong with nonce %s", binascii.unhexlify(nonce))
-        if nonce in self.ping_nonce_handle_lookup:
-            logging.debug("canceling hang-up")
-            self.ping_nonce_handle_lookup[nonce].cancel()
-            del self.ping_nonce_handle_lookup[nonce]
-
-    def handle_msg_addr(self, date_address_tuples):
-        logging.info("got addresses %s", str(date_address_tuples))
-
-    def handle_msg_version(
-        self, version, node_type, timestamp, remote_address,
-            local_address, nonce, subversion, last_block_index, when):
-        self.send_msg_verack()
-
-    def handle_msg_verack(self):
-        pass
-
-    def handle_msg_inv(self, items):
-        pass
-
-    def handle_msg_alert(self, payload, signature, alert_msg):
-        pass
-
-    def handle_msg_tx(self, tx):
-        pass
+    def next_message(self):
+        return self.messages.get()
 
     def send_msg_version(
         self, version, subversion, node_type, current_time,
@@ -177,14 +105,22 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         the_bytes = bitcoin_streamer.pack_struct(
             "LQQAAQSL", version, node_type, current_time,
             remote, local, nonce, subversion, last_block_index)
-        self.write_message(b"version", the_bytes)
+        self.send_message(b"version", the_bytes)
 
     def send_msg_verack(self):
-        self.write_message(b"verack", b'')
+        self.send_message(b"verack")
+
+    def send_msg_getaddr(self):
+        self.send_message(b"getaddr")
 
     def send_msg_getdata(self, items):
         the_bytes = bitcoin_streamer.pack_struct("I" + ("v" * len(items)), len(items), *items)
-        self.write_message(b"getdata", the_bytes)
+        self.send_message(b"getdata", the_bytes)
 
     def send_msg_ping(self, nonce):
-        self.write_message(b"ping", nonce)
+        nonce_data = struct.pack("<Q", nonce)
+        self.send_message(b"ping", nonce_data)
+
+    def send_msg_pong(self, nonce):
+        nonce_data = struct.pack("<Q", nonce)
+        self.send_message(b"pong", nonce_data)
