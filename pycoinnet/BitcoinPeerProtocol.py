@@ -7,8 +7,9 @@ import os
 import struct
 import time
 
+from pycoin import encoding
 from pycoin.serialize import bitcoin_streamer
-from pycoinnet.BitcoinPeerStreamReader import BitcoinPeerStreamReader
+from pycoinnet.BitcoinPeerStream import BitcoinPeerStreamReader
 from pycoinnet.reader import init_bitcoin_streamer
 from pycoinnet.reader.PeerAddress import PeerAddress
 
@@ -17,18 +18,25 @@ init_bitcoin_streamer()
 
 class BitcoinPeerProtocol(asyncio.Protocol):
 
+    def magic_header(self):
+        return binascii.unhexlify('f9beb4d9')
+
     def connection_made(self, transport):
         logging.debug("connection made %s", transport)
         self.transport = transport
-        self.stream = BitcoinPeerStreamReader()
+        self.reader = BitcoinPeerStreamReader()
+        self._magic_header = self.magic_header()
         self._request_handle = asyncio.Task(self.start())
 
     def data_received(self, data):
-        self.stream.feed_data(data)
+        self.reader.feed_data(data)
 
     def write_message(self, message_type, message_data=b''):
-        packet = self.stream.packet_for_message(message_type, message_data)
-        logging.debug("sending message %s [%d bytes]", message_type, len(packet))
+        message_type_padded = (message_type+(b'\0'*12))[:12]
+        message_size = struct.pack("<L", len(message_data))
+        message_checksum = encoding.double_sha256(message_data)[:4]
+        packet = b"".join([self._magic_header, message_type_padded, message_size, message_checksum, message_data])
+        logging.debug("sending message %s [%d bytes]", message_type.decode("utf8"), len(packet))
         self.transport.write(packet)
 
     def get_msg_version_parameters_default(self):
@@ -77,7 +85,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
                 logging.exception("message parse failed")
 
     def parse_next_message(self):
-        message_name, message_data = yield from self.stream.readmessage()
+        message_name, message_data = yield from self.reader.read_message(self._magic_header)
 
         logging.debug("message: %s (%d byte payload)", message_name, len(message_data))
 
@@ -86,13 +94,15 @@ class BitcoinPeerProtocol(asyncio.Protocol):
 
         def alert_supplement(d):
             d["alert_msg"] = bitcoin_streamer.parse_as_dict(
-                "version relayUntil expiration id cancel setCancel minVer maxVer setSubVer priority comment statusBar reserved".split(),
+                "version relayUntil expiration id cancel setCancel minVer maxVer"
+                " setSubVer priority comment statusBar reserved".split(),
                 "LQQLLSLLSLSSS",
                 d["payload"])
 
         PARSE_PAIR = {
             'version': (
-                "version node_type timestamp remote_address local_address nonce subversion last_block_index",
+                "version node_type timestamp remote_address local_address"
+                " nonce subversion last_block_index",
                 "LQQAAQSL",
                 version_supplement
             ),
@@ -114,7 +124,8 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             post_f = lambda d: 0
             if len(the_tuple) > 2:
                 post_f = the_tuple[2]
-            d = bitcoin_streamer.parse_as_dict(prop_names.split(), prop_struct, io.BytesIO(message_data))
+            d = bitcoin_streamer.parse_as_dict(
+                prop_names.split(), prop_struct, io.BytesIO(message_data))
             post_f(d)
             f = getattr(self, "handle_msg_%s" % message_name)
             f(**d)
@@ -141,7 +152,9 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def handle_msg_addr(self, date_address_tuples):
         logging.info("got addresses %s", str(date_address_tuples))
 
-    def handle_msg_version(self, version, node_type, timestamp, remote_address, local_address, nonce, subversion, last_block_index, when):
+    def handle_msg_version(
+        self, version, node_type, timestamp, remote_address,
+            local_address, nonce, subversion, last_block_index, when):
         self.send_msg_verack()
 
     def handle_msg_verack(self):
@@ -156,10 +169,14 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def handle_msg_tx(self, tx):
         pass
 
-    def send_msg_version(self, version, subversion, node_type, current_time, remote_address, remote_listen_port, local_address, local_listen_port, nonce, last_block_index):
+    def send_msg_version(
+        self, version, subversion, node_type, current_time,
+            remote_address, remote_listen_port, local_address, local_listen_port, nonce, last_block_index):
         remote = PeerAddress(1, remote_address, remote_listen_port)
         local = PeerAddress(1, local_address, local_listen_port)
-        the_bytes = bitcoin_streamer.pack_struct("LQQAAQSL", version, node_type, current_time, remote, local, nonce, subversion, last_block_index)
+        the_bytes = bitcoin_streamer.pack_struct(
+            "LQQAAQSL", version, node_type, current_time,
+            remote, local, nonce, subversion, last_block_index)
         self.write_message(b"version", the_bytes)
 
     def send_msg_verack(self):
