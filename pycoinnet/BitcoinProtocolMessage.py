@@ -8,6 +8,33 @@ from pycoinnet.reader import init_bitcoin_streamer
 init_bitcoin_streamer()
 
 
+### definitions of message structures and types
+# L: 4 byte long integer
+# Q: 8 byte long integer
+# S: unicode string
+# [v]: array of InvItem objects
+# [LA]: array of (L, PeerAddress) tuples
+# b: boolean
+# A: PeerAddress object
+# B: Block object
+# T: Tx object
+
+MESSAGE_STRUCTURES = {
+    'version':
+        "version:L services:Q timestamp:Q remote_address:A local_address:A"
+        " nonce:Q subversion:S last_block_index:L",
+    'verack': "",
+    'inv': "items:[v]",
+    'getdata': "items:[v]",
+    'addr': "date_address_tuples:[LA]",
+    'alert': "payload signature:SS",
+    'tx': "tx:T",
+    'block': "block:B",
+    'ping': "nonce:Q",
+    'pong': "nonce:Q",
+}
+
+
 class BitcoinProtocolMessage(object):
     """
     name: message name
@@ -30,22 +57,6 @@ class BitcoinProtocolMessage(object):
 
     def __str__(self):
         return "<BitcoinProtocolMessage %s>" % self.name
-
-
-MESSAGE_STRUCTURES = {
-    'version':
-        "version:L services:Q timestamp:Q remote_address:A local_address:A"
-        " nonce:Q subversion:S last_block_index:L",
-    'verack': "",
-    'inv': "items:[v]",
-    'getdata': "items:[v]",
-    'addr': "date_address_tuples:[LA]",
-    'alert': "payload signature:SS",
-    'tx': "tx:T",
-    'block': "block:B",
-    'ping': "nonce:Q",
-    'pong': "nonce:Q",
-}
 
 
 def _make_parser(the_struct=''):
