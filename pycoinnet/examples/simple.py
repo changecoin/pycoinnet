@@ -71,7 +71,7 @@ class AddressDB(object):
                 f.write("%d/%s/%d\n" % (self.addresses[(host, port)], host, port))
 
 
-def get_msg_version_parameters_default(transport):
+def get_msg_version_parameters(transport):
     # this must return a dictionary with:
     #  version (integer)
     #  subversion (bytes, like b"/Satoshi:0.7.2/")
@@ -116,7 +116,7 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, memp
     try:
         address_db.add_address(host, port, int(time.time()))
         connections.add(transport)
-        d = get_msg_version_parameters_default(protocol.transport)
+        d = get_msg_version_parameters(protocol.transport)
         protocol.send_msg_version(**d)
         message_name, data = yield from protocol.next_message()
         if message_name != 'version':
@@ -195,7 +195,6 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, memp
                             print("%d: %s %s BTC" % (idx, ba, satoshi_to_btc(tx_out.coin_value)))
                         else:
                             print("can't figure out destination of tx_out id %d" % idx)
-
 
     except Exception:
         logging.exception("problem on %s:%d", host, port)

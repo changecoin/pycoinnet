@@ -9,11 +9,14 @@ import time
 
 from pycoin import encoding
 from pycoin.serialize import bitcoin_streamer
-from pycoinnet.BitcoinPeerStream import BitcoinPeerStreamReader
 from pycoinnet.reader import init_bitcoin_streamer
 from pycoinnet.reader.PeerAddress import PeerAddress
 
 init_bitcoin_streamer()
+
+
+class BitcoinProtocolError(Exception):
+    pass
 
 
 class BitcoinPeerProtocol(asyncio.Protocol):
@@ -25,7 +28,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def connection_made(self, transport):
         logging.debug("connection made %s", transport)
         self.transport = transport
-        self.reader = BitcoinPeerStreamReader()
+        self.reader = asyncio.StreamReader()
         self.messages = asyncio.queues.Queue()
         self.last_message_timestamp = time.time()
         self._request_handle = asyncio.async(self.start())
@@ -50,11 +53,50 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             except Exception:
                 logging.exception("message parse failed")
 
+    MAX_MESSAGE_SIZE = 20*1024*1024
+
+    @asyncio.coroutine
     def parse_next_message(self):
-        message_name, message_data = yield from self.reader.read_message(self.magic_header)
+
+        # read magic header
+        reader = self.reader
+        blob = yield from reader.readexactly(len(self.magic_header))
+        if blob != self.magic_header:
+            s = "bad magic: got %s" % binascii.hexlify(blob)
+            logging.error(s)
+            raise BitcoinProtocolError(s)
+
+        # read message name
+        message_name_bytes = yield from reader.readexactly(12)
+        message_name = message_name_bytes.replace(b"\0", b"").decode("utf8")
+
+        # get size of message
+        size_bytes = yield from reader.readexactly(4)
+        size = int.from_bytes(size_bytes, byteorder="little")
+        if size > self.MAX_MESSAGE_SIZE:
+            raise BitcoinProtocolError("absurdly large message size %d" % size)
+
+        # read the hash, then the message
+        transmitted_hash = yield from reader.readexactly(4)
+        message_data = yield from reader.readexactly(size)
+
+        # check the hash
+        actual_hash = encoding.double_sha256(message_data)[:4]
+        if actual_hash == transmitted_hash:
+            logging.debug("checksum is CORRECT")
+        else:
+            s = "checksum is WRONG: %s instead of %s" % (
+                binascii.hexlify(actual_hash), binascii.hexlify(transmitted_hash))
+            logging.error(s)
+            raise BitcoinProtocolError(s)
 
         logging.debug("message: %s (%d byte payload)", message_name, len(message_data))
 
+        # create the message object and fill in the attributes
+        data = self.augmented_message(message_name, message_data)
+        yield from self.messages.put((message_name, data))
+
+    def augmented_message(self, message_name, message_data):
         def version_supplement(d):
             d["when"] = datetime.datetime.fromtimestamp(d["timestamp"])
 
@@ -86,6 +128,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         the_tuple = PARSE_PAIR.get(message_name)
         if the_tuple is None:
             logging.error("unknown message: %s %s", message_name, binascii.hexlify(message_data))
+            d = {}
         else:
             prop_names, prop_struct = the_tuple[:2]
             post_f = lambda d: 0
@@ -94,7 +137,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             d = bitcoin_streamer.parse_as_dict(
                 prop_names.split(), prop_struct, io.BytesIO(message_data))
             post_f(d)
-            yield from self.messages.put((message_name, d))
+        return d
 
     def next_message(self):
         return self.messages.get()
