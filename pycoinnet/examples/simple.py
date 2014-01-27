@@ -99,9 +99,8 @@ def get_msg_version_parameters(transport):
     )
 
 
-def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, mempool):
-    magic_header = binascii.unhexlify('0B110907')  # testnet3
-    magic_header = binascii.unhexlify('F9BEB4D9')
+@asyncio.coroutine
+def connect_to_remote(magic_header, event_loop, address_db, connections, mempool):
     host, port = address_db.next_address()
     logging.info("connecting to %s port %d", host, port)
     try:
@@ -109,14 +108,24 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, memp
             lambda: BitcoinPeerProtocol(magic_header),
             host=host, port=port)
     except Exception:
-        logging.error("failed to connect to %s:%d", host, port)
+        logging.exception("failed to connect to %s:%d", host, port)
         address_db.remove_address(host, port)
         address_db.save()
         return
 
     try:
+        logging.info("connected to %s:%d", host, port)
         address_db.add_address(host, port, int(time.time()))
         connections.add(transport)
+        yield from talk_to_remote(protocol, address_db, mempool)
+    except Exception:
+        logging.exception("done talking to %s:%d", host, port)
+    connections.remove(transport)
+
+
+@asyncio.coroutine
+def talk_to_remote(protocol, address_db, mempool):
+    try:
         d = get_msg_version_parameters(protocol.transport)
         protocol.send_msg_version(**d)
         message = yield from protocol.next_message()
@@ -138,7 +147,7 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, memp
                     yield from asyncio.sleep(30)
                     if nonce in ping_nonces:
                         # gotta hang up!
-                        transport.close()
+                        protocol.transport.close()
                         return
                 yield from asyncio.sleep(protocol.last_message_timestamp + 60 - now)
 
@@ -199,19 +208,20 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, memp
 
     except Exception:
         logging.exception("problem on %s:%d", host, port)
-    transport.close()
-    connections.remove(transport)
+    protocol.transport.close()
 
 
 def keep_minimum_connections(event_loop, min_connection_count=6):
     connections = set()
     address_db = AddressDB("addresses.txt")
+    magic_header = binascii.unhexlify('0B110907')  # testnet3
+    magic_header = binascii.unhexlify('F9BEB4D9')
     mempool = {}
     while 1:
         logging.debug("checking connection count (currently %d)", len(connections))
         difference = min_connection_count - len(connections)
         for i in range(difference+4):
-            asyncio.Task(simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, mempool))
+            asyncio.Task(connect_to_remote(magic_header, event_loop, address_db, connections, mempool))
         yield from asyncio.sleep(10)
 
 
