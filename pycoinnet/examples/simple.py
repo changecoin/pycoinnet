@@ -87,7 +87,7 @@ def get_msg_version_parameters(transport):
     return dict(
         version=70001,
         subversion=b"/Notoshi/",
-        node_type=1,
+        services=1,
         current_time=int(time.time()),
         remote_address=remote_address,
         remote_listen_port=remote_port,
@@ -95,6 +95,7 @@ def get_msg_version_parameters(transport):
         local_listen_port=6111,
         nonce=struct.unpack("!Q", os.urandom(8))[0],
         last_block_index=0,
+        want_relay=True
     )
 
 
@@ -118,8 +119,8 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, memp
         connections.add(transport)
         d = get_msg_version_parameters(protocol.transport)
         protocol.send_msg_version(**d)
-        message_name, data = yield from protocol.next_message()
-        if message_name != 'version':
+        message = yield from protocol.next_message()
+        if message.name != 'version':
             raise Exception("missing version")
         protocol.send_msg_verack()
         #protocol.send_msg_getaddr()
@@ -144,33 +145,33 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, memp
         asyncio.Task(heartbeat())
 
         while True:
-            message_name, data = yield from protocol.next_message()
-            print("==>", message_name, str(data)[:77])
+            message = yield from protocol.next_message()
+            print("==>", message)
 
-            if message_name == 'ping':
-                print("got ping %s" % data)
-                protocol.send_msg_pong(data["nonce"])
+            if message.name == 'ping':
+                print("got ping %s" % message.nonce)
+                protocol.send_msg_pong(message.nonce)
 
-            if message_name == 'pong':
-                print("got pong %s" % data)
-                ping_nonces.discard(data["nonce"])
+            if message.name == 'pong':
+                print("got pong %s" % message.nonce)
+                ping_nonces.discard(message.nonce)
 
-            if message_name == 'addr':
+            if message.name == 'addr':
                 address_db.add_addresses(
                     (timestamp, address.ip_address.exploded, address.port)
-                    for timestamp, address in data["date_address_tuples"])
+                    for timestamp, address in message.date_address_tuples)
                 address_db.save()
                 #break
 
-            if message_name == 'inv':
-                print("inv : %s" % data)
-                items = data["items"]
+            if message.name == 'inv':
+                print("inv : %s" % str(message.items))
+                items = message.items
                 to_fetch = [item for item in items if item.data not in mempool]
                 if to_fetch:
                     protocol.send_msg_getdata(to_fetch)
 
-            if message_name == 'tx':
-                tx = data["tx"]
+            if message.name == 'tx':
+                tx = message.tx
                 the_hash = tx.hash()
                 if not the_hash in mempool:
                     print("\nTx ID %s" % b2h_rev(the_hash))
@@ -182,8 +183,8 @@ def simple_clientbitcoin_peer_protocol(event_loop, address_db, connections, memp
                         else:
                             print("can't figure out destination of tx_out id %d" % idx)
 
-            if message_name == 'block':
-                block = data["block"]
+            if message.name == 'block':
+                block = message.block
                 the_hash = block.hash()
                 mempool[the_hash] = block
                 for tx in block.txs:
