@@ -1,23 +1,19 @@
 import asyncio.queues
 import binascii
-import datetime
 import logging
-import os
 import struct
 import time
 
 from pycoin import encoding
 from pycoin.serialize import bitcoin_streamer
 
-from pycoinnet.messages import BitcoinProtocolMessage
-from pycoinnet.reader import init_bitcoin_streamer
+from pycoinnet.BitcoinProtocolMessage import BitcoinProtocolMessage
+
 from pycoinnet.reader import PeerAddress
 
 
 class BitcoinProtocolError(Exception):
     pass
-
-
 
 
 class BitcoinPeerProtocol(asyncio.Protocol):
@@ -101,8 +97,8 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         return self.messages.get()
 
     def send_msg_version(
-        self, version, subversion, services, current_time, remote_address,
-        remote_listen_port, local_address, local_listen_port, nonce, last_block_index, want_relay):
+            self, version, subversion, services, current_time, remote_address,
+            remote_listen_port, local_address, local_listen_port, nonce, last_block_index, want_relay):
         remote = PeerAddress(1, remote_address, remote_listen_port)
         local = PeerAddress(1, local_address, local_listen_port)
         the_bytes = bitcoin_streamer.pack_struct(

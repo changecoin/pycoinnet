@@ -1,3 +1,5 @@
+import binascii
+import logging
 import io
 
 from pycoin.serialize import bitcoin_streamer
@@ -31,8 +33,9 @@ class BitcoinProtocolMessage(object):
 
 
 MESSAGE_STRUCTURES = {
-    'version': "version:L services:Q timestamp:Q remote_address:A local_address:A"
-                " nonce:Q subversion:S last_block_index:L",
+    'version':
+        "version:L services:Q timestamp:Q remote_address:A local_address:A"
+        " nonce:Q subversion:S last_block_index:L",
     'verack': "",
     'inv': "items:[v]",
     'getdata': "items:[v]",
