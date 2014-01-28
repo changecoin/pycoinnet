@@ -155,14 +155,13 @@ def talk_to_remote(protocol, address_db, mempool):
 
         while True:
             message = yield from protocol.next_message()
-            print("==>", message)
 
             if message.name == 'ping':
-                print("got ping %s" % message.nonce)
+                logging.debug("got ping %s", message.nonce)
                 protocol.send_msg_pong(message.nonce)
 
             if message.name == 'pong':
-                print("got pong %s" % message.nonce)
+                logging.debug("got pong %s", message.nonce)
                 ping_nonces.discard(message.nonce)
 
             if message.name == 'addr':
@@ -173,7 +172,7 @@ def talk_to_remote(protocol, address_db, mempool):
                 #break
 
             if message.name == 'inv':
-                print("inv : %s" % str(message.items))
+                logging.debug("inv : %s", list(message.items))
                 items = message.items
                 to_fetch = [item for item in items if item.data not in mempool]
                 if to_fetch:
@@ -183,44 +182,42 @@ def talk_to_remote(protocol, address_db, mempool):
                 tx = message.tx
                 the_hash = tx.hash()
                 if not the_hash in mempool:
-                    print("\nTx ID %s" % b2h_rev(the_hash))
                     mempool[the_hash] = tx
-                    for idx, tx_out in enumerate(tx.txs_out):
-                        ba = tx_out.bitcoin_address()
-                        if ba:
-                            print("%d: %s %s BTC" % (idx, ba, satoshi_to_btc(tx_out.coin_value)))
-                        else:
-                            print("can't figure out destination of tx_out id %d" % idx)
+                    show_tx(tx)
 
             if message.name == 'block':
                 block = message.block
                 the_hash = block.hash()
-                mempool[the_hash] = block
-                for tx in block.txs:
-                    the_hash = tx.hash()
-                    print("\nTx ID %s" % b2h_rev(the_hash))
-                    for idx, tx_out in enumerate(tx.txs_out):
-                        ba = tx_out.bitcoin_address()
-                        if ba:
-                            print("%d: %s %s BTC" % (idx, ba, satoshi_to_btc(tx_out.coin_value)))
-                        else:
-                            print("can't figure out destination of tx_out id %d" % idx)
+                if the_hash not in mempool:
+                    mempool[the_hash] = block
+                    for tx in block.txs:
+                        show_tx(tx)
 
     except Exception:
         logging.exception("closing connection")
     protocol.transport.close()
 
 
-def keep_minimum_connections(event_loop, min_connection_count=6):
+def show_tx(tx):
+    logging.info("Tx ID %s", b2h_rev(tx.hash()))
+    for idx, tx_out in enumerate(tx.txs_out):
+        ba = tx_out.bitcoin_address()
+        if ba:
+            logging.info("%d: %s %s BTC", idx, ba, satoshi_to_btc(tx_out.coin_value))
+        else:
+            logging.info("can't figure out destination of tx_out id %d", idx)
+
+
+def keep_minimum_connections(event_loop, min_connection_count=4):
     connections = set()
     address_db = AddressDB("addresses.txt")
     magic_header = binascii.unhexlify('0B110907')  # testnet3
-    magic_header = binascii.unhexlify('F9BEB4D9')
+    #magic_header = binascii.unhexlify('F9BEB4D9')
     mempool = {}
     while 1:
         logging.debug("checking connection count (currently %d)", len(connections))
         difference = min_connection_count - len(connections)
-        for i in range(difference+4):
+        for i in range(difference+10):
             asyncio.Task(connect_to_remote(magic_header, event_loop, address_db, connections, mempool))
         yield from asyncio.sleep(10)
 
