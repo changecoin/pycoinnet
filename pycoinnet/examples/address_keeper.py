@@ -35,7 +35,12 @@ class AddressDB(object):
                     port = int(port)
                     addresses[(host, port)] = timestamp
         except Exception:
-            pass
+            logging.error("can't open %s, using default", self.path)
+            for h in [
+                "bitseed.xf2.org", "dnsseed.bluematt.me",
+                "seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org"
+            ]:
+                 addresses[(h, 8333)] = 1
         return addresses
 
     def next_address(self):
