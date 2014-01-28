@@ -1,11 +1,25 @@
 import binascii
 import logging
 import io
+import struct
 
+from pycoin.block import Block
 from pycoin.serialize import bitcoin_streamer
-from pycoinnet.reader import init_bitcoin_streamer
+from pycoin.tx.Tx import Tx
 
-init_bitcoin_streamer()
+from pycoinnet.InvItem import InvItem
+from pycoinnet.PeerAddress import PeerAddress
+
+
+def init_bitcoin_streamer():
+    more_parsing = [
+        ("A", (PeerAddress.parse, lambda f, peer_addr: peer_addr.stream(f))),
+        ("v", (InvItem.parse, lambda f, inv_item: inv_item.stream(f))),
+        ("T", (Tx.parse, lambda f, tx: tx.stream(f))),
+        ("B", (Block.parse, lambda f, block: block.stream(f))),
+        ("b", (lambda f: struct.unpack("?", f.read(1))[0], lambda f, b: f.write(struct.pack("?", b)))),
+    ]
+    bitcoin_streamer.BITCOIN_STREAMER.register_functions(more_parsing)
 
 
 ### definitions of message structures and types
@@ -35,30 +49,6 @@ MESSAGE_STRUCTURES = {
 }
 
 
-class BitcoinProtocolMessage(object):
-    """
-    name: message name
-    data: unparsed blob
-    """
-    def __init__(self, message_name, data):
-        self.name = message_name
-        message_stream = io.BytesIO(data)
-        parser = MESSAGE_PARSERS.get(message_name)
-        if parser:
-            d = parser(message_stream)
-            fixup = MESSAGE_FIXUPS.get(message_name)
-            if fixup:
-                d = fixup(d, message_stream)
-        else:
-            logging.error("unknown message: %s %s", message_name, binascii.hexlify(data))
-            d = {}
-        for k, v in d.items():
-            setattr(self, k, v)
-
-    def __str__(self):
-        return "<BitcoinProtocolMessage %s>" % self.name
-
-
 def _make_parser(the_struct=''):
     def f(message_stream):
         struct_items = [s.split(":") for s in the_struct.split()]
@@ -68,11 +58,11 @@ def _make_parser(the_struct=''):
     return f
 
 
-def message_parsers():
+def _message_parsers():
     return dict((k, _make_parser(v)) for k, v in MESSAGE_STRUCTURES.items())
 
 
-def message_fixups():
+def _message_fixups():
     def fixup_version(d, f):
         if d["version"] >= 70001:
             b = f.read(1)
@@ -89,11 +79,39 @@ def message_fixups():
         d["alert_info"] = d1
         return d
 
-    return {
-        'version': fixup_version,
-        'alert': fixup_alert
-    }
+    return dict(version=fixup_version, alert=fixup_alert)
 
 
-MESSAGE_PARSERS = message_parsers()
-MESSAGE_FIXUPS = message_fixups()
+class BitcoinProtocolMessage(object):
+    """
+    name: message name
+    data: unparsed blob
+    """
+
+    MESSAGE_PARSERS = _message_parsers()
+    MESSAGE_FIXUPS = _message_fixups()
+
+    @classmethod
+    def parse_from_data(class_, message_name, data):
+        item = class_()
+        item.name = message_name
+        message_stream = io.BytesIO(data)
+        parser = class_.MESSAGE_PARSERS.get(message_name)
+        if parser:
+            d = parser(message_stream)
+            fixup = class_.MESSAGE_FIXUPS.get(message_name)
+            if fixup:
+                d = fixup(d, message_stream)
+        else:
+            logging.error("unknown message: %s %s", message_name, binascii.hexlify(data))
+            d = {}
+        for k, v in d.items():
+            setattr(item, k, v)
+        return item
+
+    def __str__(self):
+        return "<BitcoinProtocolMessage %s>" % self.name
+
+
+init_bitcoin_streamer()
+

@@ -8,8 +8,7 @@ from pycoin import encoding
 from pycoin.serialize import bitcoin_streamer
 
 from pycoinnet.BitcoinProtocolMessage import BitcoinProtocolMessage
-
-from pycoinnet.reader import PeerAddress
+from pycoinnet.PeerAddress import PeerAddress
 
 
 class BitcoinProtocolError(Exception):
@@ -90,7 +89,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         logging.debug("message: %s (%d byte payload)", message_name, len(message_data))
 
         # parse the blob into a BitcoinProtocolMessage object
-        msg = BitcoinProtocolMessage(message_name, message_data)
+        msg = BitcoinProtocolMessage.parse_from_data(message_name, message_data)
         yield from self.messages.put(msg)
 
     def next_message(self):

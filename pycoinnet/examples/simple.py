@@ -207,7 +207,7 @@ def talk_to_remote(protocol, address_db, mempool):
                             print("can't figure out destination of tx_out id %d" % idx)
 
     except Exception:
-        logging.exception("problem on %s:%d", host, port)
+        logging.exception("closing connection")
     protocol.transport.close()
 
 
