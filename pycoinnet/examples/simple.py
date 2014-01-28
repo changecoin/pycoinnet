@@ -75,7 +75,7 @@ def get_msg_version_parameters(transport):
     # this must return a dictionary with:
     #  version (integer)
     #  subversion (bytes, like b"/Satoshi:0.7.2/")
-    #  node_type (must be 1)
+    #  services (a mask, set to 1 for now)
     #  current time (seconds since epoch)
     #  remote_address
     #  remote_listen_port
@@ -132,7 +132,8 @@ def talk_to_remote(protocol, address_db, mempool):
         if message.name != 'version':
             raise Exception("missing version")
         protocol.send_msg_verack()
-        #protocol.send_msg_getaddr()
+
+        protocol.send_msg_getaddr()
 
         ping_nonces = set()
         def heartbeat():
