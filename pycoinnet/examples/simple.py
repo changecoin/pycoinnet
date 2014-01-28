@@ -226,7 +226,9 @@ def keep_minimum_connections(event_loop, min_connection_count=6):
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG,
+        format=('%(asctime)s [%(process)d] [%(levelname)s] '
+                '%(filename)s:%(lineno)d %(message)s'))
     event_loop = asyncio.get_event_loop()
     asyncio.Task(keep_minimum_connections(event_loop))
     event_loop.run_forever()
