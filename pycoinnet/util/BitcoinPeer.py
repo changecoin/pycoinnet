@@ -11,6 +11,8 @@ import os
 import struct
 import time
 
+from pycoinnet.InvItem import InvItem
+from pycoinnet.util.Queue import Queue
 
 ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
@@ -19,6 +21,8 @@ class BitcoinPeer(object):
 
     def __init__(self, controller=None):
         self.controller = controller
+        self.inv_items_requested = Queue()
+        self.inv_item_futures = {}
 
     def get_msg_version_parameters(self, transport):
         # this must return a dictionary with:
@@ -101,6 +105,7 @@ class BitcoinPeer(object):
                         ## it seems we will hang on protocol.next_message?
                 yield from asyncio.sleep(self.protocol.last_message_timestamp + self.heartbeat_rate - now)
         asyncio.Task(ping_heartbeat())
+        asyncio.Task(self.process_inv_items_requested())
 
         while self.is_running:
             message = yield from self.protocol.next_message()
@@ -114,11 +119,56 @@ class BitcoinPeer(object):
                 logging.debug("got ping %s", message.nonce)
                 self.protocol.send_msg_pong(message.nonce)
 
+            if message.name == 'tx':
+                #import pdb; pdb.set_trace()
+                tx = message.tx
+                inv_item = InvItem(ITEM_TYPE_TX, tx.hash())
+                future = self.inv_item_futures.get(inv_item)
+                if future:
+                    if not future.done():
+                        future.set_result(tx)
+                    else:
+                        logging.info("got %s unsolicited", tx.id())
+
+            if message.name == 'block':
+                block = message.block
+                inv_item = InvItem(ITEM_TYPE_BLOCK, block.hash())
+                future = self.inv_item_futures.get(inv_item)
+                if future:
+                    if not future.done():
+                        future.set_result(block)
+                    else:
+                        logging.info("got %s unsolicited", block.id())
+
             handler_name = "handle_msg_%s" % message.name
 
             if hasattr(self.controller, handler_name):
                 controller_handler = getattr(self.controller, handler_name)
                 controller_handler(self, message)
+
+    @asyncio.coroutine
+    def request_inv_item(self, inv_item, timeout=15):
+        """timeout is naive... we want to be smarter about it somehow"""
+        future = asyncio.Future()
+        yield from self.inv_items_requested.put((inv_item, future))
+        done, pending = yield from asyncio.wait([future], timeout=timeout)
+        if len(done) > 0:
+            exc = future.exception()
+            if exc: raise exc
+            return future.result()
+        for p in pending:
+            p.cancel()
+        return None
+
+    @asyncio.coroutine
+    def process_inv_items_requested(self):
+        while True:
+            pairs = yield from self.inv_items_requested.get_all()
+            while len(pairs) > 0:
+                for inv_item, future in pairs:
+                    self.inv_item_futures[inv_item] = future
+                self.protocol.send_msg_getdata([p[0] for p in pairs[:50000]])
+                pairs = pairs[50000:]
 
     def __str__(self):
         return repr(self)

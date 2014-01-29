@@ -12,6 +12,7 @@ from pycoin.serialize import b2h_rev
 from pycoinnet.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.InvItem import InvItem
 from pycoinnet.util.BitcoinPeer import BitcoinPeer
+from pycoinnet.util.Queue import Queue
 
 MAINNET_MAGIC_HEADER=binascii.unhexlify('F9BEB4D9')
 TESTNET_MAGIC_HEADER=binascii.unhexlify('0B110907')
@@ -28,7 +29,6 @@ class ConnectionManager:
         self.connections = set()
 
         self.inv_item_queue = asyncio.queues.Queue()
-        self.inv_futures = {}
 
     def run(self, min_connection_count=4):
         self.min_connection_count = min_connection_count
@@ -69,26 +69,6 @@ class ConnectionManager:
         logging.debug("inv from %s : %s", peer, list(message.items))
         self.inv_item_queue.put_nowait((peer, message))
 
-    def handle_msg_tx(self, peer, message):
-        tx = message.tx
-        item = InvItem(ITEM_TYPE_TX, tx.hash())
-        import pdb; pdb.set_trace()
-        if item not in self.inv_futures:
-            logging.error("got tx %s but it was never requested", b2h_rev(tx.hash()))
-            return
-        self.inv_futures[item].set_result(tx)
-        ## TODO: put tx into a queue where it can be pulled out and dealt with
-        show_tx(tx)
-
-    def handle_msg_block(self, peer, message):
-        block = message.block
-        item = InvItem(ITEM_TYPE_BLOCK, block.hash())
-        if item not in self.inv_futures:
-            logging.error("got block %s but it was never requested", b2h_rev(block.hash()))
-            return
-        self.inv_futures[item].set_result(block)
-        ## TODO: put block into a queue where it can be pulled out and dealt with
-
     @asyncio.coroutine
     def collect_inventory_loop(self):
 
@@ -96,58 +76,47 @@ class ConnectionManager:
 
         while True:
             peer, message = yield from self.inv_item_queue.get()
-            logging.debug("collect_inventory_loop peer %s message %s", peer, message)
             items = message.items
-            for item in items:
+            for inv_item in items:
                 # don't get Tx items for now
                 #if item.type == ITEM_TYPE_TX:
                 #    continue
-                logging.debug("peer %s has inv item %s", peer, item)
-                if item not in peers_with_inv_item:
-                    peers_with_inv_item[item] = set()
-                peer_set = peers_with_inv_item[item]
-                peer_set.add(peer)
-                peer_set_nonempty = asyncio.Event()
-                peer_set_nonempty.set()
-                if not item in self.inv_futures:
-                    logging.debug("initiating download_inv_item for item %s", item)
-                    def done_callback(future):
-                        import pdb; pdb.set_trace()
-                        logging.debug("in done_callback for item %s", item)
-                        del peers_with_inv_item[item]
-                    self.inv_futures[item] = asyncio.Task(self.download_inv_item(item, peer_set, peer_set_nonempty))
-                    self.inv_futures[item].add_done_callback(done_callback)
+                logging.debug("peer %s has inv item %s", peer, inv_item)
+                if inv_item not in peers_with_inv_item:
+                    peer_queue = Queue()
+                    asyncio.Task(self.download_inv_item(inv_item, peer_queue))
+                    peers_with_inv_item[inv_item] = peer_queue
+                else:
+                    logging.debug("tasks fetching for %s already in progress", inv_item)
+                    peer_queue = peers_with_inv_item[inv_item]
+                yield from peer_queue.put(peer)
 
     @asyncio.coroutine
-    def download_inv_item(self, item, peer_set, peer_set_nonempty, peer_timeout=15):
+    def download_inv_item(self, inv_item, peer_queue, peer_timeout=15):
         peers_tried = set()
         peers_we_can_try = set()
         while True:
-            more_peers = peer_set_nonempty.is_set()
-            if more_peers:
-                peers_we_can_try.update(peer_set)
-                peer_set.clear()
-                peer_set_nonempty.clear()
+            if peer_queue.qsize() > 0:
+                more_peers = yield from peer_queue.get_all()
+                peers_we_can_try.update(more_peers)
 
             peers_we_can_try.difference_update(peers_tried)
             if len(peers_we_can_try) == 0:
-                yield from peer_set_nonempty.wait()
+                peer = yield from peer_queue.get()
+                peers_we_can_try.add(peer)
                 continue
 
             # pick a peer. For now, we just do it randomly
             peer = peers_we_can_try.pop()
             peers_tried.add(peer)
 
-            logging.debug("trying to fetch %s from %s", item, peer)
-            # BRAIN DAMAGE: queue it up in the peer so it can potentially handle multiple
-            future = peer.protocol.send_msg_getdata([item])
-            done, pending = yield from asyncio.wait([future], timeout=peer_timeout)
-            import pdb; pdb.set_trace()
-            if len(done) > 0:
+            logging.debug("queuing for fetch %s from %s", inv_item, peer)
+            item = yield from peer.request_inv_item(inv_item)
+            if item:
                 break
-            for p in pending:
-                p.cancel()
-            # and try another
+            # otherwise, just try another
+        if inv_item.item_type == ITEM_TYPE_TX:
+            show_tx(item)
 
     ### end inventory collector
 
@@ -174,6 +143,8 @@ class ConnectionManager:
             for tx in block.txs:
                 show_tx(tx)
 """
+
+from pycoin.convention import satoshi_to_btc
 
 def show_tx(tx):
     logging.info("Tx ID %s", b2h_rev(tx.hash()))
