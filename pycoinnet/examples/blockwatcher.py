@@ -27,6 +27,7 @@ def fetch_addresses(event_loop):
             logging.debug("got address %s", t)
 
 def main():
+    asyncio.tasks._DEBUG = True
     logging.basicConfig(level=logging.DEBUG,
         format=('%(asctime)s [%(process)d] [%(levelname)s] '
                 '%(filename)s:%(lineno)d %(message)s'))

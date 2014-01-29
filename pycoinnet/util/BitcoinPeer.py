@@ -15,7 +15,7 @@ import time
 ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
 
-class ConnectedClient(object):
+class BitcoinPeer(object):
 
     def __init__(self, controller=None):
         self.controller = controller
@@ -50,7 +50,7 @@ class ConnectedClient(object):
 
     def did_complete_handshake(self):
         #self.protocol.send_msg_getaddr()
-        pass
+        self.protocol.send_msg_mempool()
 
     @asyncio.coroutine
     def run(self, connection_manager, protocol):
@@ -119,3 +119,9 @@ class ConnectedClient(object):
             if hasattr(self.controller, handler_name):
                 controller_handler = getattr(self.controller, handler_name)
                 controller_handler(self, message)
+
+    def __str__(self):
+        return repr(self)
+
+    def __repr__(self):
+        return "<Peer %s>" % str(self.protocol.transport.get_extra_info("socket").getpeername())

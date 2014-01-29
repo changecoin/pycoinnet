@@ -108,6 +108,9 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def send_msg_verack(self):
         self.send_message(b"verack")
 
+    def send_msg_mempool(self):
+        self.send_message(b"mempool")
+
     def send_msg_getaddr(self):
         self.send_message(b"getaddr")
 

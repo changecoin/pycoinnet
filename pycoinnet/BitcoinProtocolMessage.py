@@ -10,7 +10,6 @@ from pycoin.tx.Tx import Tx
 from pycoinnet.InvItem import InvItem
 from pycoinnet.PeerAddress import PeerAddress
 
-
 def init_bitcoin_streamer():
     more_parsing = [
         ("A", (PeerAddress.parse, lambda f, peer_addr: peer_addr.stream(f))),
@@ -38,14 +37,29 @@ MESSAGE_STRUCTURES = {
         "version:L services:Q timestamp:Q remote_address:A local_address:A"
         " nonce:Q subversion:S last_block_index:L",
     'verack': "",
+    'addr': "date_address_tuples:[LA]",
     'inv': "items:[v]",
     'getdata': "items:[v]",
-    'addr': "date_address_tuples:[LA]",
-    'alert': "payload signature:SS",
+    'notfound': "items:[v]",
+    'getblocks': "version:L hashes:[#] hash_stop:#",
+    'getheaders': "version:L hashes:[#] hash_stop:#",
     'tx': "tx:T",
     'block': "block:B",
+    #'headers': "headers:I[HI]",  ## TODO: add H => BlockHeader
+    'getaddr': "",
+    'mempool': "",
+    #'checkorder': obsolete
+    #'submitorder': obsolete
+    #'reply': obsolete
     'ping': "nonce:Q",
     'pong': "nonce:Q",
+    'filterload': "filter:[1] hash_function_count:L tweak:L flags:1",
+    'filteradd': "data:[1]",
+    'filterclear': "",
+    'merkleblock':
+        "version:L prev_block:# merkle_root:# timestamp:L"
+        " bits:L nonce:L total_transactions:L hashes:[#] flags:1",
+    'alert': "payload signature:SS",
 }
 
 
