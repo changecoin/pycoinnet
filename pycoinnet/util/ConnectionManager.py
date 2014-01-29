@@ -12,6 +12,8 @@ from pycoin.serialize import b2h_rev
 from pycoinnet.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.InvItem import InvItem
 from pycoinnet.util.BitcoinPeer import BitcoinPeer
+from pycoinnet.util.InvItemHandler import InvItemHandler
+from pycoinnet.util.PingPongHandler import PingPongHandler
 from pycoinnet.util.Queue import Queue
 
 MAINNET_MAGIC_HEADER=binascii.unhexlify('F9BEB4D9')
@@ -28,12 +30,9 @@ class ConnectionManager:
         self.magic_header = magic_header
         self.connections = set()
 
-        self.inv_item_queue = asyncio.queues.Queue()
-
     def run(self, min_connection_count=4):
         self.min_connection_count = min_connection_count
         asyncio.Task(self.keep_minimum_connections())
-        asyncio.Task(self.collect_inventory_loop())
 
     @asyncio.coroutine
     def keep_minimum_connections(self):
@@ -56,6 +55,11 @@ class ConnectionManager:
             peer = BitcoinPeer()
             peer.register_delegate(self)
             connections.add(peer)
+
+            iih = InvItemHandler(peer)
+            PingPongHandler(peer)
+            InvCollector(peer, iih.request_inv_item)
+
             yield from peer.run(self, protocol)
             connections.discard(peer)
         except Exception:
@@ -64,17 +68,25 @@ class ConnectionManager:
             #address_db.save()
             return
 
-    ### inventory collector
+
+class InvCollector:
+
+    def __init__(self, peer, request_inv_item):
+        self.peer = peer
+        self.request_inv_item = request_inv_item
+        self.inv_item_queue = asyncio.queues.Queue()
+        self.tx_queue = Queue()
+        self.block_queue = Queue()
+        peer.register_delegate(self)
+        asyncio.Task(self.run())
 
     def handle_msg_inv(self, peer, items, **kwargs):
-        logging.debug("inv from %s : %s", peer, list(items))
+        logging.debug("inv from %s : %d items", peer, len(items))
         self.inv_item_queue.put_nowait((peer, items))
 
     @asyncio.coroutine
-    def collect_inventory_loop(self):
-
+    def run(self):
         peers_with_inv_item = {}
-
         while True:
             peer, items = yield from self.inv_item_queue.get()
             for inv_item in items:
@@ -84,8 +96,8 @@ class ConnectionManager:
                 logging.debug("peer %s has inv item %s", peer, inv_item)
                 if inv_item not in peers_with_inv_item:
                     peer_queue = Queue()
-                    asyncio.Task(self.download_inv_item(inv_item, peer_queue))
                     peers_with_inv_item[inv_item] = peer_queue
+                    asyncio.Task(self.download_inv_item(inv_item, peer_queue))
                 else:
                     logging.debug("tasks fetching for %s already in progress", inv_item)
                     peer_queue = peers_with_inv_item[inv_item]
@@ -111,14 +123,14 @@ class ConnectionManager:
             peers_tried.add(peer)
 
             logging.debug("queuing for fetch %s from %s", inv_item, peer)
-            item = yield from peer.request_inv_item(inv_item)
+            item = yield from self.request_inv_item(inv_item)
             if item:
                 break
             # otherwise, just try another
         if inv_item.item_type == ITEM_TYPE_TX:
-            show_tx(item)
-
-    ### end inventory collector
+            yield from self.tx_queue.put(item)
+        if inv_item.item_type == ITEM_TYPE_BLOCK:
+            yield from self.block_queue.put(item)
 
 
     """
@@ -127,21 +139,6 @@ class ConnectionManager:
             (timestamp, address.ip_address.exploded, address.port)
             for timestamp, address in message.date_address_tuples)
         self.address_db.save()
-
-    def handle_msg_tx(self, peer, message):
-        tx = message.tx
-        the_hash = tx.hash()
-        if not the_hash in mempool:
-            mempool[the_hash] = tx
-            show_tx(tx)
-
-    def handle_msg_block(self, peer, message):
-        block = message.block
-        the_hash = block.hash()
-        if the_hash not in mempool:
-            mempool[the_hash] = block
-            for tx in block.txs:
-                show_tx(tx)
 """
 
 from pycoin.convention import satoshi_to_btc

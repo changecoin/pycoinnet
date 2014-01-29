@@ -97,6 +97,8 @@ def _message_fixups():
 
 
 def make_parse_from_data():
+    init_bitcoin_streamer()
+
     MESSAGE_PARSERS = _message_parsers()
     MESSAGE_FIXUPS = _message_fixups()
 
@@ -115,5 +117,3 @@ def make_parse_from_data():
     return parse_from_data
 
 parse_from_data = make_parse_from_data()
-
-init_bitcoin_streamer()
