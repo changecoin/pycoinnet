@@ -96,36 +96,24 @@ def _message_fixups():
     return dict(version=fixup_version, alert=fixup_alert)
 
 
-class BitcoinProtocolMessage(object):
-    """
-    name: message name
-    data: unparsed blob
-    """
-
+def make_parse_from_data():
     MESSAGE_PARSERS = _message_parsers()
     MESSAGE_FIXUPS = _message_fixups()
 
-    @classmethod
-    def parse_from_data(class_, message_name, data):
-        item = class_()
-        item.name = message_name
+    def parse_from_data(message_name, data):
         message_stream = io.BytesIO(data)
-        parser = class_.MESSAGE_PARSERS.get(message_name)
+        parser = MESSAGE_PARSERS.get(message_name)
         if parser:
             d = parser(message_stream)
-            fixup = class_.MESSAGE_FIXUPS.get(message_name)
+            fixup = MESSAGE_FIXUPS.get(message_name)
             if fixup:
                 d = fixup(d, message_stream)
         else:
             logging.error("unknown message: %s %s", message_name, binascii.hexlify(data))
             d = {}
-        for k, v in d.items():
-            setattr(item, k, v)
-        return item
+        return d
+    return parse_from_data
 
-    def __str__(self):
-        return "<BitcoinProtocolMessage %s>" % self.name
-
+parse_from_data = make_parse_from_data()
 
 init_bitcoin_streamer()
-

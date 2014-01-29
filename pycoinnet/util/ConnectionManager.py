@@ -53,7 +53,8 @@ class ConnectionManager:
             transport, protocol = yield from event_loop.create_connection(
                 lambda: BitcoinPeerProtocol(self.magic_header),
                 host=host, port=port)
-            peer = BitcoinPeer(self)
+            peer = BitcoinPeer()
+            peer.register_delegate(self)
             connections.add(peer)
             yield from peer.run(self, protocol)
             connections.discard(peer)
@@ -65,9 +66,9 @@ class ConnectionManager:
 
     ### inventory collector
 
-    def handle_msg_inv(self, peer, message):
-        logging.debug("inv from %s : %s", peer, list(message.items))
-        self.inv_item_queue.put_nowait((peer, message))
+    def handle_msg_inv(self, peer, items, **kwargs):
+        logging.debug("inv from %s : %s", peer, list(items))
+        self.inv_item_queue.put_nowait((peer, items))
 
     @asyncio.coroutine
     def collect_inventory_loop(self):
@@ -75,8 +76,7 @@ class ConnectionManager:
         peers_with_inv_item = {}
 
         while True:
-            peer, message = yield from self.inv_item_queue.get()
-            items = message.items
+            peer, items = yield from self.inv_item_queue.get()
             for inv_item in items:
                 # don't get Tx items for now
                 #if item.type == ITEM_TYPE_TX:

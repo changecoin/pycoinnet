@@ -7,7 +7,7 @@ import time
 from pycoin import encoding
 from pycoin.serialize import bitcoin_streamer
 
-from pycoinnet.BitcoinProtocolMessage import BitcoinProtocolMessage
+from pycoinnet.message import parse_from_data
 from pycoinnet.PeerAddress import PeerAddress
 
 
@@ -25,6 +25,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         logging.debug("connection made %s", transport)
         self.transport = transport
         self.reader = asyncio.StreamReader()
+        #self.writer = asyncio.StreamWriter() ## use this someday so we get flow control etc.
         self.messages = asyncio.queues.Queue()
         self.last_message_timestamp = time.time()
         self._request_handle = asyncio.async(self.start())
@@ -89,12 +90,14 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         logging.debug("message: %s (%d byte payload)", message_name, len(message_data))
 
         # parse the blob into a BitcoinProtocolMessage object
-        msg = BitcoinProtocolMessage.parse_from_data(message_name, message_data)
-        yield from self.messages.put(msg)
+        msg = parse_from_data(message_name, message_data)
+        yield from self.messages.put((message_name, msg))
 
     def next_message(self):
+        ## TODO: add a second condition about connection being open
         return self.messages.get()
 
+    ## BRAIN DAMAGE: automate these
     def send_msg_version(
             self, version, subversion, services, current_time, remote_address,
             remote_listen_port, local_address, local_listen_port, nonce, last_block_index, want_relay):

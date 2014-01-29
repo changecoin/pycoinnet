@@ -11,6 +11,8 @@ import os
 import struct
 import time
 
+from pycoinnet.message import MESSAGE_STRUCTURES
+
 from pycoinnet.InvItem import InvItem
 from pycoinnet.util.Queue import Queue
 
@@ -19,10 +21,23 @@ ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
 class BitcoinPeer(object):
 
-    def __init__(self, controller=None):
-        self.controller = controller
+    def __init__(self):
         self.inv_items_requested = Queue()
         self.inv_item_futures = {}
+        self.delegate_methods = dict((msg_name, []) for msg_name in MESSAGE_STRUCTURES.keys())
+        self.register_delegate(self)
+
+    def register_delegate(self, delegate):
+        for msg_name in MESSAGE_STRUCTURES.keys():
+            method_name = "handle_msg_%s" % msg_name
+            if hasattr(delegate, method_name):
+                self.delegate_methods[msg_name].append(getattr(delegate, method_name))
+
+    def unregister_delegate(self, delegate):
+        for msg_name in MESSAGE_STRUCTURES.keys():
+            method_name = "handle_msg_%s" % msg_name
+            if hasattr(delegate, method_name):
+                self.delegate_methods[msg_name].remove(getattr(delegate, method_name))
 
     def get_msg_version_parameters(self, transport):
         # this must return a dictionary with:
@@ -76,8 +91,8 @@ class BitcoinPeer(object):
     def do_handshake(self):
         d = self.get_msg_version_parameters(self.protocol.transport)
         self.protocol.send_msg_version(**d)
-        message = yield from self.protocol.next_message()
-        if message.name != 'version':
+        message_name, data = yield from self.protocol.next_message()
+        if message_name != 'version':
             raise Exception("missing version")
         self.protocol.send_msg_verack()
 
@@ -108,43 +123,41 @@ class BitcoinPeer(object):
         asyncio.Task(self.process_inv_items_requested())
 
         while self.is_running:
-            message = yield from self.protocol.next_message()
+            message_name, data = yield from self.protocol.next_message()
+            if message_name in self.delegate_methods:
+                methods = self.delegate_methods.get(message_name)
+                if methods:
+                    for m in methods:
+                        #import pdb; pdb.set_trace()
+                        m(self, **data)
+            else:
+                logging.error("unknown message %s", message_name)
 
-            # handle pongs here
-            if message.name == 'pong':
-                logging.debug("got pong %s", message.nonce)
-                ping_nonces.discard(message.nonce)
+    def handle_msg_pong(self, peer, nonce, **kwargs):
+        logging.debug("got pong %s", nonce)
+        ping_nonces.discard(nonce)
 
-            if message.name == 'ping':
-                logging.debug("got ping %s", message.nonce)
-                self.protocol.send_msg_pong(message.nonce)
+    def handle_msg_ping(self, peer, nonce, **kwargs):
+        logging.debug("got ping %s", nonce)
+        peer.protocol.send_msg_pong(nonce)
 
-            if message.name == 'tx':
-                #import pdb; pdb.set_trace()
-                tx = message.tx
-                inv_item = InvItem(ITEM_TYPE_TX, tx.hash())
-                future = self.inv_item_futures.get(inv_item)
-                if future:
-                    if not future.done():
-                        future.set_result(tx)
-                    else:
-                        logging.info("got %s unsolicited", tx.id())
+    def handle_msg_tx(self, peer, tx, **kwargs):
+        inv_item = InvItem(ITEM_TYPE_TX, tx.hash())
+        future = self.inv_item_futures.get(inv_item)
+        if future:
+            if not future.done():
+                future.set_result(tx)
+            else:
+                logging.info("got %s unsolicited", tx.id())
 
-            if message.name == 'block':
-                block = message.block
-                inv_item = InvItem(ITEM_TYPE_BLOCK, block.hash())
-                future = self.inv_item_futures.get(inv_item)
-                if future:
-                    if not future.done():
-                        future.set_result(block)
-                    else:
-                        logging.info("got %s unsolicited", block.id())
-
-            handler_name = "handle_msg_%s" % message.name
-
-            if hasattr(self.controller, handler_name):
-                controller_handler = getattr(self.controller, handler_name)
-                controller_handler(self, message)
+    def handle_msg_block(self, peer, block, **kwargs):
+        inv_item = InvItem(ITEM_TYPE_BLOCK, block.hash())
+        future = self.inv_item_futures.get(inv_item)
+        if future:
+            if not future.done():
+                future.set_result(block)
+            else:
+                logging.info("got %s unsolicited", block.id())
 
     @asyncio.coroutine
     def request_inv_item(self, inv_item, timeout=15):
