@@ -10,17 +10,6 @@ from pycoin.tx.Tx import Tx
 from pycoinnet.InvItem import InvItem
 from pycoinnet.PeerAddress import PeerAddress
 
-def init_bitcoin_streamer():
-    more_parsing = [
-        ("A", (PeerAddress.parse, lambda f, peer_addr: peer_addr.stream(f))),
-        ("v", (InvItem.parse, lambda f, inv_item: inv_item.stream(f))),
-        ("T", (Tx.parse, lambda f, tx: tx.stream(f))),
-        ("B", (Block.parse, lambda f, block: block.stream(f))),
-        ("b", (lambda f: struct.unpack("?", f.read(1))[0], lambda f, b: f.write(struct.pack("?", b)))),
-    ]
-    bitcoin_streamer.BITCOIN_STREAMER.register_functions(more_parsing)
-
-
 ### definitions of message structures and types
 # L: 4 byte long integer
 # Q: 8 byte long integer
@@ -59,7 +48,7 @@ MESSAGE_STRUCTURES = {
     'merkleblock':
         "version:L prev_block:# merkle_root:# timestamp:L"
         " bits:L nonce:L total_transactions:L hashes:[#] flags:1",
-    'alert': "payload signature:SS",
+    'alert': "payload:S signature:S",
 }
 
 
@@ -96,24 +85,18 @@ def _message_fixups():
     return dict(version=fixup_version, alert=fixup_alert)
 
 
-def pack_from_data(message_name, **kwargs):
-    the_struct = MESSAGE_STRUCTURES[message_name]
-    if not the_struct:
-        return b''
-    f = io.BytesIO()
-    the_fields = the_struct.split(" ")
-    pairs = [t.split(":") for t in the_fields]
-    for name, type in pairs:
-        if type[0] == '[':
-            bitcoin_streamer.BITCOIN_STREAMER.stream_struct("I", f, len(kwargs[name]))
-            for v in kwargs[name]:
-                bitcoin_streamer.BITCOIN_STREAMER.stream_struct(type[1:-1], f, v)
-        else:
-            bitcoin_streamer.BITCOIN_STREAMER.stream_struct(type, f, kwargs[name])
-    return f.getvalue()
+def _make_parse_from_data():
 
+    def init_bitcoin_streamer():
+        more_parsing = [
+            ("A", (PeerAddress.parse, lambda f, peer_addr: peer_addr.stream(f))),
+            ("v", (InvItem.parse, lambda f, inv_item: inv_item.stream(f))),
+            ("T", (Tx.parse, lambda f, tx: tx.stream(f))),
+            ("B", (Block.parse, lambda f, block: block.stream(f))),
+            ("b", (lambda f: struct.unpack("?", f.read(1))[0], lambda f, b: f.write(struct.pack("?", b)))),
+        ]
+        bitcoin_streamer.BITCOIN_STREAMER.register_functions(more_parsing)
 
-def make_parse_from_data():
     init_bitcoin_streamer()
 
     MESSAGE_PARSERS = _message_parsers()
@@ -133,4 +116,22 @@ def make_parse_from_data():
         return d
     return parse_from_data
 
-parse_from_data = make_parse_from_data()
+
+parse_from_data = _make_parse_from_data()
+
+
+def pack_from_data(message_name, **kwargs):
+    the_struct = MESSAGE_STRUCTURES[message_name]
+    if not the_struct:
+        return b''
+    f = io.BytesIO()
+    the_fields = the_struct.split(" ")
+    pairs = [t.split(":") for t in the_fields]
+    for name, type in pairs:
+        if type[0] == '[':
+            bitcoin_streamer.BITCOIN_STREAMER.stream_struct("I", f, len(kwargs[name]))
+            for v in kwargs[name]:
+                bitcoin_streamer.BITCOIN_STREAMER.stream_struct(type[1:-1], f, v)
+        else:
+            bitcoin_streamer.BITCOIN_STREAMER.stream_struct(type, f, kwargs[name])
+    return f.getvalue()

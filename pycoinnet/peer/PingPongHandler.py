@@ -5,6 +5,7 @@ import os
 import struct
 import time
 
+logging = logging.getLogger("PingPongHandler")
 
 class PingPongHandler:
     def __init__(self, peer, heartbeat_rate=60, missing_pong_disconnect_timeout=60):
@@ -12,6 +13,7 @@ class PingPongHandler:
         self.ping_nonces = set()
         self.heartbeat_rate = heartbeat_rate
         self.missing_pong_disconnect_timeout = missing_pong_disconnect_timeout
+        self.last_message_timestamp = time.time()
 
         peer.register_delegate(self)
 
@@ -21,7 +23,7 @@ class PingPongHandler:
     def run(self):
         while True:
             now = time.time()
-            if self.peer.last_message_timestamp + self.heartbeat_rate < now:
+            if self.last_message_timestamp + self.heartbeat_rate < now:
                 # we need to ping!
                 nonce = struct.unpack("!Q", os.urandom(8))[0]
                 self.peer.send_msg("ping", nonce=nonce)
@@ -31,12 +33,16 @@ class PingPongHandler:
                 if nonce in self.ping_nonces:
                     # gotta hang up!
                     self.peer.stop()
-            yield from asyncio.sleep(self.peer.last_message_timestamp + self.heartbeat_rate - now)
+            yield from asyncio.sleep(self.last_message_timestamp + self.heartbeat_rate - now)
+
+    def handle_msg(self, peer, **kwargs):
+        self.last_message_timestamp = time.time()
+        logging.debug("got message, new last timestamp is %d", int(self.last_message_timestamp))
 
     def handle_msg_pong(self, peer, nonce, **kwargs):
-        logging.debug("got pong %s", nonce)
+        logging.info("got pong %s", nonce)
         self.ping_nonces.discard(nonce)
 
     def handle_msg_ping(self, peer, nonce, **kwargs):
-        logging.debug("got ping %s", nonce)
+        logging.info("got ping %s", nonce)
         peer.send_msg("pong", nonce=nonce)
