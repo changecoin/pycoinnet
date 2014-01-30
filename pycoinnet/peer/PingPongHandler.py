@@ -14,22 +14,24 @@ class PingPongHandler:
         self.missing_pong_disconnect_timeout = missing_pong_disconnect_timeout
 
         peer.register_delegate(self)
+
+    def handle_connection_made(self, peer, transport):
         asyncio.Task(self.run())
 
     def run(self):
         while True:
             now = time.time()
-            if self.peer.protocol.last_message_timestamp + self.heartbeat_rate < now:
+            if self.peer.last_message_timestamp + self.heartbeat_rate < now:
                 # we need to ping!
                 nonce = struct.unpack("!Q", os.urandom(8))[0]
-                self.peer.protocol.send_msg_ping(nonce)
+                self.peer.send_msg("ping", nonce=nonce)
                 logging.debug("sending ping %d", nonce)
                 self.ping_nonces.add(nonce)
                 yield from asyncio.sleep(self.missing_pong_disconnect_timeout)
                 if nonce in self.ping_nonces:
                     # gotta hang up!
                     self.peer.stop()
-            yield from asyncio.sleep(self.peer.protocol.last_message_timestamp + self.heartbeat_rate - now)
+            yield from asyncio.sleep(self.peer.last_message_timestamp + self.heartbeat_rate - now)
 
     def handle_msg_pong(self, peer, nonce, **kwargs):
         logging.debug("got pong %s", nonce)
@@ -37,4 +39,4 @@ class PingPongHandler:
 
     def handle_msg_ping(self, peer, nonce, **kwargs):
         logging.debug("got ping %s", nonce)
-        peer.protocol.send_msg_pong(nonce)
+        peer.send_msg("pong", nonce=nonce)

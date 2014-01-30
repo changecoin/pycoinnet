@@ -96,6 +96,23 @@ def _message_fixups():
     return dict(version=fixup_version, alert=fixup_alert)
 
 
+def pack_from_data(message_name, **kwargs):
+    the_struct = MESSAGE_STRUCTURES[message_name]
+    if not the_struct:
+        return b''
+    f = io.BytesIO()
+    the_fields = the_struct.split(" ")
+    pairs = [t.split(":") for t in the_fields]
+    for name, type in pairs:
+        if type[0] == '[':
+            bitcoin_streamer.BITCOIN_STREAMER.stream_struct("I", f, len(kwargs[name]))
+            for v in kwargs[name]:
+                bitcoin_streamer.BITCOIN_STREAMER.stream_struct(type[1:-1], f, v)
+        else:
+            bitcoin_streamer.BITCOIN_STREAMER.stream_struct(type, f, kwargs[name])
+    return f.getvalue()
+
+
 def make_parse_from_data():
     init_bitcoin_streamer()
 
