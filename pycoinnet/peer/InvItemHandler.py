@@ -26,6 +26,13 @@ class InvItemHandler:
     def handle_msg_block(self, peer, block, **kwargs):
         self.fulfill(ITEM_TYPE_BLOCK, block)
 
+    def handle_msg_notfound(self, peer, items, **kwargs):
+        logging.info("notfound from %s for items %s", peer, items)
+        for item in items:
+            future = self.inv_item_futures.get(inv_item)
+            if future:
+                future.cancel()
+
     def fulfill(self, inv_item_type, result):
         inv_item = InvItem(inv_item_type, result.hash())
         future = self.inv_item_futures.get(inv_item)
