@@ -32,6 +32,10 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.magic_header = magic_header
         self.delegate_methods = dict((event, []) for event in self.HANDLE_MESSAGE_NAMES)
         self.override_msg_version_parameters = {}
+        ## stats
+        self.bytes_read = 0
+        self.bytes_writ = 0
+        self.connect_start_time = None
 
     def register_delegate(self, delegate):
         """
@@ -75,6 +79,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self._request_handle = asyncio.async(self.run())
         self.trigger_event("connection_made", dict(transport=transport))
         self._is_writable = True
+        self.connect_start_time = time.time()
 
     def connection_lost(self, exc):
         self._request_handle.cancel()
@@ -88,6 +93,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         message_checksum = encoding.double_sha256(message_data)[:4]
         packet = b"".join([self.magic_header, message_type_padded, message_size, message_checksum, message_data])
         logging.debug("sending message %s [%d bytes]", message_type.decode("utf8"), len(packet))
+        self.bytes_writ += len(packet)
         self.transport.write(packet)
 
     def trigger_event(self, event, data):
@@ -179,6 +185,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         #self._request_handle.cancel()
 
     def data_received(self, data):
+        self.bytes_read += len(data)
         self.reader.feed_data(data)
 
     def pause_writing(self):
