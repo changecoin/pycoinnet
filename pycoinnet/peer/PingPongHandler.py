@@ -18,7 +18,10 @@ class PingPongHandler:
         peer.register_delegate(self)
 
     def handle_connection_made(self, peer, transport):
-        asyncio.Task(self.run())
+        self.ping_task = asyncio.Task(self.run())
+
+    def handle_connection_lost(self, peer, exc):
+        self.ping_task.cancel()
 
     def run(self):
         while True:

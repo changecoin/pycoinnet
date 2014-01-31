@@ -68,21 +68,29 @@ def run():
     def block_collector():
 
         @asyncio.coroutine
-        def fetch_and_print(item):
+        def fetch_tx(item):
             tx = yield from inv_collector.download_inv_item(item)
+            name = tx.id()
+            #f = open("txs/%s" % name, "wb")
+            #tx.stream(f)
+            #f.close()
             show_tx(tx)
 
         @asyncio.coroutine
-        def fetch_and_print_block(item):
+        def fetch_block(item):
             block = yield from inv_collector.download_inv_item(item)
+            name = block.id()
+            f = open("blocks/%s" % name, "wb")
+            block.stream(f)
+            f.close()
             logging.info("WE GOT A BLOCK!! %s", block)
 
         while True:
             item = yield from inv_collector.next_new_inv_item()
             if item.item_type == ITEM_TYPE_TX:
-                asyncio.Task(fetch_and_print(item))
+                asyncio.Task(fetch_tx(item))
             if item.item_type == ITEM_TYPE_BLOCK:
-                asyncio.Task(fetch_and_print_block(item))
+                asyncio.Task(fetch_block(item))
 
     cm.run()
     asyncio.Task(fetch_addresses())
