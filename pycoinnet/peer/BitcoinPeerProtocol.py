@@ -174,7 +174,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             logging.error(s)
             raise BitcoinProtocolError(s)
 
-        logging.debug("message: %s (%d byte payload)", message_name, len(message_data))
+        logging.debug("message %s: %s (%d byte payload)", self, message_name, len(message_data))
 
         # parse the blob into a BitcoinProtocolMessage object
         data = parse_from_data(message_name, message_data)

@@ -3,7 +3,7 @@ import logging
 import io
 import struct
 
-from pycoin.block import Block
+from pycoin.block import Block, BlockHeader
 from pycoin.serialize import bitcoin_streamer
 from pycoin.tx.Tx import Tx
 
@@ -34,7 +34,7 @@ MESSAGE_STRUCTURES = {
     'getheaders': "version:L hashes:[#] hash_stop:#",
     'tx': "tx:T",
     'block': "block:B",
-    #'headers': "headers:I[HI]",  ## TODO: add H => BlockHeader
+    'headers': "headers:[zI]",
     'getaddr': "",
     'mempool': "",
     #'checkorder': obsolete
@@ -93,6 +93,7 @@ def _make_parse_from_data():
             ("v", (InvItem.parse, lambda f, inv_item: inv_item.stream(f))),
             ("T", (Tx.parse, lambda f, tx: tx.stream(f))),
             ("B", (Block.parse, lambda f, block: block.stream(f))),
+            ("z", (BlockHeader.parse, lambda f, blockheader: blockheader.stream(f))),
             ("b", (lambda f: struct.unpack("?", f.read(1))[0], lambda f, b: f.write(struct.pack("?", b)))),
         ]
         bitcoin_streamer.BITCOIN_STREAMER.register_functions(more_parsing)
