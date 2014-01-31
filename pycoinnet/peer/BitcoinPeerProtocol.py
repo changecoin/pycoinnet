@@ -133,7 +133,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
                 self.trigger_event("msg_%s" % message_name, data)
 
         except Exception:
-            logging.exception("message parse failed")
+            logging.exception("message parse failed in %s:%d", self.transport.get_extra_info("socket").getpeername())
 
         self.transport.close()
 
