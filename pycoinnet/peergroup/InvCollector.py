@@ -28,6 +28,13 @@ class InvCollector:
                 self.new_inv_item_queue.put_nowait(item)
             self.inv_item_db[item].put_nowait(peer)
 
+    def handle_msg_notfound(self, peer, items, **kwargs):
+        logging.info("notfound from %s for items %s", peer, items)
+        for item in items:
+            future = self.inv_item_futures.get(inv_item)
+            if future:
+                future.cancel()
+
     @asyncio.coroutine
     def next_new_inv_item(self):
         v = yield from self.new_inv_item_queue.get()
