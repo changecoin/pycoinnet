@@ -59,15 +59,19 @@ class InvCollector:
             peers_tried.add(peer)
 
             logging.debug("queuing for fetch %s from %s", inv_item, peer)
-            v = yield from peer.request_inv_item(inv_item)
-            return v
 
-            future = peer.request_inv_item(inv_item)
-            done, pending = yield from asyncio.wait([future], timeout=peer_timeout)
-            if len(done) > 0:
-                future = done.pop()
-                exc = future.exception()
-                if not exc:
-                    return future.result()
-            for p in pending:
-                p.cancel()
+            future = yield from wait1(peer.request_inv_item(inv_item), timeout=peer_timeout)
+            if future.done():
+                return future.result()
+
+
+def wait1(future, timeout=None):
+    done, pending = yield from asyncio.wait([future], timeout=timeout)
+    if len(done) > 0:
+        future = done.pop()
+        exc = future.exception()
+        if exc:
+            raise exc
+    else:
+        future = pending.pop()
+    return future
