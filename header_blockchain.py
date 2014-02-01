@@ -35,7 +35,7 @@ def main():
     last_header = blockchain.longest_chain_endpoint()
     difficulty, block_number = blockchain.distance(last_header)
     print(b2h_rev(last_header), difficulty, block_number)
-    last_header = blockchain.block_number(256789)
+    last_header = blockchain.block_by_number(256789)
     difficulty, block_number = blockchain.distance(last_header)
     print(b2h_rev(last_header), difficulty, block_number)
     h1 = h2b_rev("0000000000000001a677b173b522fde9d5e60624dcb632ef3558aca65f4f65a6")

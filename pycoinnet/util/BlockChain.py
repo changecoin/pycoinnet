@@ -93,7 +93,7 @@ class BlockChain(object):
             if None in [block_hash_1, block_hash_2]:
                 return None
 
-    def block_number(self, index):
+    def block_by_number(self, index):
         local_distance_map = {}
         h = self.longest_chain_endpoint()
         d1 = self.distance(h, local_distance_map)
