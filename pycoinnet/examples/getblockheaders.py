@@ -27,12 +27,15 @@ TESTNET_MAGIC_HEADER = binascii.unhexlify('0B110907')
 ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
 from pycoin.convention import satoshi_to_btc
+from pycoinnet.util.BlockChain import BlockChain
+
+LOCAL_GENESIS = (bytes(reversed(binascii.unhexlify('000000000000003887df1f29024b06fc2200b55f8af8f35453d7be294df2d214'))), 113300798888791, 250000)
 
 class GetHeaders:
     def __init__(self, path):
-        self.all_headers = {}
+        self.header_lookup = {}
         self.path = path
-        self.headers = []
+        self.blockchain = BlockChain([LOCAL_GENESIS])
         pos = 0
         def header_iter():
             try:
@@ -43,7 +46,7 @@ class GetHeaders:
                 pass
         self.add_to_header_db(header_iter())
         self.header_f = open(self.path, "ab")
-        self.header_f.truncate(len(self.headers) * 80)
+        self.header_f.truncate(len(self.header_lookup) * 80)
 
     def handle_msg_verack(self, peer, **kwargs):
         self.fetch_more_headers(peer)
@@ -55,22 +58,23 @@ class GetHeaders:
                 header.stream(self.header_f)
             self.header_f.flush()
             self.fetch_more_headers(peer)
-        else: import pdb; pdb.set_trace()
 
     def add_to_header_db(self, headers):
         new_headers = []
         for header in headers:
             the_hash = header.hash()
-            if the_hash not in self.all_headers:
-                self.all_headers[the_hash] = header
-                self.headers.append(header)
+            if the_hash not in self.header_lookup:
+                self.header_lookup[the_hash] = header
                 new_headers.append(header)
-        logging.debug("now have %d headers", len(self.headers))
+        logging.debug("now have %d headers", len(self.header_lookup))
+        self.blockchain.load_blocks(new_headers)
         return new_headers
 
     def fetch_more_headers(self, peer):
         # this really needs to use the last item in the known block chain
-        last_header = self.headers[-1].hash() if self.headers else (b'\0' * 32)
+        last_header = self.blockchain.longest_chain_endpoint()
+        difficulty, block_number = self.blockchain.distance(last_header)
+        logging.debug("block number = %d", block_number)
         hashes = [last_header]
         peer.send_msg(message_name="getheaders", version=1, hashes=hashes, hash_stop=last_header)
 

@@ -63,6 +63,19 @@ class BlockChain(object):
             if None in [block_hash_1, block_hash_2]:
                 return None
 
+    def block_number(self, index):
+        local_distance_map = {}
+        h = self.longest_chain_endpoint()
+        d1 = self.distance(h, local_distance_map)
+        if d1[1] < index:
+            return None
+        while h:
+            d1 = self.distance(h, local_distance_map)
+            if d1[1] == index:
+                return h
+            h = self.prev_map.get(h)
+        return None
+
     def process(self):
         local_distance_map = {}
         while len(self.unprocessed_block_hashes) > 0:
@@ -111,10 +124,10 @@ class BlockChain(object):
 
     def longest_chain_endpoint(self):
         h, (difficulty, block_number) = max((x for x in self.distance_map.items() if x[0] in self.maximal_chain_endpoints), key=lambda x: x[1][0])
-        return h, difficulty, block_number
+        return h
 
     def calculate_longest_chain(self):
-        h, difficulty, endpoint = self.longest_chain_endpoint()
+        h = self.longest_chain_endpoint()
         path = [h]
         while h in self.prev_map:
             h = self.prev_map[h]
