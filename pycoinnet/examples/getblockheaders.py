@@ -31,7 +31,7 @@ from pycoinnet.util.BlockChain import BlockChain
 
 LOCAL_GENESIS = (bytes(reversed(binascii.unhexlify('000000000000003887df1f29024b06fc2200b55f8af8f35453d7be294df2d214'))), 113300798888791, 250000)
 
-class GetHeaders:
+class CatchupHeaders:
     def __init__(self, path):
         self.header_lookup = {}
         self.path = path
@@ -82,7 +82,7 @@ def run():
     ADDRESS_QUEUE = Queue(maxsize=20)
 
     inv_collector = InvCollector()
-    get_headers = GetHeaders("headers.bin")
+    get_headers = CatchupHeaders("headers.bin")
 
     def create_protocol_callback():
         peer = BitcoinPeerProtocol(MAINNET_MAGIC_HEADER)
