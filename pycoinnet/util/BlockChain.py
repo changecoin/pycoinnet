@@ -1,6 +1,7 @@
 
 import binascii
 import logging
+import struct
 
 from pycoin.block import Block
 from pycoin.tx import script
@@ -11,6 +12,31 @@ MAINNET_GENESIS = [
 ]
 
 class BlockChain(object):
+
+    @classmethod
+    def parse(self, f):
+        def h_p_d_iter(f):
+            count = struct.unpack("<L", f.read(4))[0]
+            p = None
+            for i in range(count):
+                h = f.read(32)
+                difficulty = struct.unpack("<Q", f.read(8))[0]
+                yield h, p, difficulty
+                p = h
+
+        items = h_p_d_iter(f)
+        h, p, difficulty = next(items)
+        the_blockchain = BlockChain(genesis=[(h, -1, difficulty)])
+        the_blockchain.load_items(items)
+        return the_blockchain
+
+    def stream(self, f):
+        path = self.longest_chain()
+        f.write(struct.pack("<L", len(path)))
+        for p in path:
+            f.write(p)
+            f.write(struct.pack("<Q", self.difficulty_map.get(p)))
+
     def __init__(self, genesis=MAINNET_GENESIS):
         self.prev_map = {}
         self.difficulty_map = dict((k, v2) for k, v1, v2 in genesis)
@@ -21,11 +47,13 @@ class BlockChain(object):
         self.next_map = {}
 
     def load_blocks(self, block_iter):
-        # register all the blocks
-        for block in block_iter:
-            h = block.hash()
-            self.prev_map[h] = block.previous_block_hash
-            self.difficulty_map[h] = block.difficulty
+        self.load_items((b.hash(), b.previous_block_hash, b.difficulty) for b in block_iter)
+
+    def load_items(self, items_iter):
+        # register everything
+        for h, previous_block_hash, difficulty in items_iter:
+            self.prev_map[h] = previous_block_hash
+            self.difficulty_map[h] = difficulty
             self.unprocessed_block_hashes.add(h)
         self.process()
 
@@ -106,14 +134,11 @@ class BlockChain(object):
     def register_block(self, block):
         self.load_blocks([block])
 
-    def unregister_block(self, block):
-        pass
-
     def longest_chain_endpoint(self):
         h, (difficulty, block_number) = max((x for x in self.distance_map.items() if x[0] in self.maximal_chain_endpoints), key=lambda x: x[1][0])
         return h
 
-    def calculate_longest_chain(self):
+    def longest_chain(self):
         h = self.longest_chain_endpoint()
         path = [h]
         while h in self.prev_map:
