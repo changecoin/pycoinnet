@@ -40,6 +40,8 @@ class BlockChain(object):
             # we have info to populate these items!
             difficulty, block_number = self.distance_map.get(k, local_distance_map.get(k))
             logging.info("processing path of length %d", len(path))
+            self.maximal_chain_endpoints.discard(path[-1])
+            self.maximal_chain_endpoints.add(path[0])
             while len(path) > 0:
                 k = path.pop()
                 difficulty += self.difficulty_map[k]
@@ -88,23 +90,8 @@ class BlockChain(object):
                 continue
             if k in self.distance_map or k in local_distance_map:
                 continue
-            # build longest (reversed) path starting with hash k
-            path = [k]
-            while k in self.prev_map and k not in self.distance_map and k not in local_distance_map:
-                k = self.prev_map[k]
-                path.append(k)
-            if k in self.distance_map or k in local_distance_map:
-                # we have info to populate these items!
-                difficulty, block_number = self.distance_map.get(k, local_distance_map.get(k))
-                logging.info("processing path of length %d", len(path))
-                self.maximal_chain_endpoints.discard(path[-1])
-                self.maximal_chain_endpoints.add(path[0])
-                while len(path) > 0:
-                    k = path.pop()
-                    difficulty += self.difficulty_map[k]
-                    local_distance_map[k] = (difficulty, block_number)
-                    block_number += 1
-            else:
+            distance = self.distance(k, local_distance_map)
+            if not distance:
                 # we need to mark this as free, to be handled when its predecessor shows up
                 if k not in self.next_map:
                     self.next_map[k] = set()
