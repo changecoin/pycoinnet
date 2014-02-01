@@ -82,8 +82,6 @@ class BlockChain(object):
         local_distance_map = {}
         while len(self.unprocessed_block_hashes) > 0:
             k = self.unprocessed_block_hashes.pop()
-            if k in local_distance_map:
-                continue
             if k in self.next_map:
                 self.unprocessed_block_hashes.update(self.next_map[k])
                 del self.next_map[k]
@@ -92,16 +90,18 @@ class BlockChain(object):
                 continue
             distance = self.distance(k, local_distance_map)
             if not distance:
-                # we need to mark this as free, to be handled when its predecessor shows up
+                # we need to mark this as free, to be handled when its parent shows up
                 if k not in self.next_map:
                     self.next_map[k] = set()
                 self.next_map[k].add(path[0])
 
-        for k,(difficulty, block_number) in local_distance_map.items():
-            if k in self.maximal_chain_endpoints or block_number % self.block_marker_frequency == 0:
-                self.distance_map[k] = (difficulty, block_number)
+        for k in self.maximal_chain_endpoints:
+            self.distance_map[k] = local_distance_map[k]
 
-        self.distance_map = dict((k,(difficulty, block_number)) for k,(difficulty, block_number) in self.distance_map.items() if k in self.maximal_chain_endpoints or block_number % self.block_marker_frequency == 0)
+        self.distance_map.update(
+            (k,(difficulty, block_number)) for k,(difficulty, block_number)
+                in self.distance_map.items()
+                    if block_number % self.block_marker_frequency == 0)
 
     def register_block(self, block):
         self.load_blocks([block])
