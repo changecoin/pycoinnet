@@ -9,6 +9,7 @@ import asyncio
 import binascii
 import logging
 
+from pycoin.block import BlockHeader
 from pycoin.serialize import b2h_rev
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
@@ -28,28 +29,63 @@ ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 from pycoin.convention import satoshi_to_btc
 
 class GetHeaders:
+    def __init__(self, path):
+        self.all_headers = {}
+        self.path = path
+        self.headers = []
+        pos = 0
+        def header_iter():
+            try:
+                with open(self.path, "rb") as f:
+                    while 1:
+                        yield BlockHeader.parse(f)
+            except Exception:
+                pass
+        self.add_to_header_db(header_iter())
+        self.header_f = open(self.path, "ab")
+        self.header_f.truncate(len(self.headers) * 80)
+
     def handle_msg_verack(self, peer, **kwargs):
-        import pdb; pdb.set_trace()
-        peer.send_msg(message_name="getheaders", version=1, hashes=[b'\0' * 32], hash_stop=binascii.unhexlify("000000008a6086520151f1385c6f5a148572b0c36156d713b48e6e5b6330529b"))
+        self.fetch_more_headers(peer)
 
     def handle_msg_headers(self, peer, headers, **kwargs):
-        import pdb; pdb.set_trace()
-        for header, tx_count in headers:
-            with open("headers/%s" % header.id(), "wb") as f: 
-                header.stream(f)
-                f.close()
+        new_headers = self.add_to_header_db(header for header, tx_count in headers)
+        if len(new_headers) > 0:
+            for header in new_headers:
+                header.stream(self.header_f)
+            self.header_f.flush()
+            self.fetch_more_headers(peer)
+        else: import pdb; pdb.set_trace()
+
+    def add_to_header_db(self, headers):
+        new_headers = []
+        for header in headers:
+            the_hash = header.hash()
+            if the_hash not in self.all_headers:
+                self.all_headers[the_hash] = header
+                self.headers.append(header)
+                new_headers.append(header)
+        logging.debug("now have %d headers", len(self.headers))
+        return new_headers
+
+    def fetch_more_headers(self, peer):
+        # this really needs to use the last item in the known block chain
+        last_header = self.headers[-1].hash() if self.headers else (b'\0' * 32)
+        hashes = [last_header]
+        peer.send_msg(message_name="getheaders", version=1, hashes=hashes, hash_stop=last_header)
 
 def run():
     ADDRESS_QUEUE = Queue(maxsize=20)
 
     inv_collector = InvCollector()
+    get_headers = GetHeaders("headers.bin")
 
     def create_protocol_callback():
         peer = BitcoinPeerProtocol(MAINNET_MAGIC_HEADER)
         peer.register_delegate(cm)
         InvItemHandler(peer)
         PingPongHandler(peer)
-        peer.register_delegate(GetHeaders())
+        peer.register_delegate(get_headers)
         peer.register_delegate(inv_collector)
         peer.run()
         return peer
@@ -58,6 +94,8 @@ def run():
 
     @asyncio.coroutine
     def fetch_addresses():
+        yield from ADDRESS_QUEUE.put(("127.0.0.1", 28333))
+        yield from asyncio.sleep(180)
         for h in [
             "bitseed.xf2.org", "dnsseed.bluematt.me",
             "seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org"

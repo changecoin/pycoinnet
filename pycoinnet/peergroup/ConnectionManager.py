@@ -41,7 +41,8 @@ class ConnectionManager:
             if count < self.min_connection_count:
                 difference = self.min_connection_count - len(self.peers_connected)
                 for i in range(difference*3):
-                    asyncio.Task(self.connect_to_remote())
+                    host, port = yield from self.address_queue.get()
+                    asyncio.Task(self.connect_to_remote(host, port))
             if count > self.max_connection_count:
                 # pick a peer at random and disconnect
                 peer = next(iter(self.peers_connected))
@@ -49,8 +50,7 @@ class ConnectionManager:
             yield from asyncio.sleep(10)
 
     @asyncio.coroutine
-    def connect_to_remote(self):
-        host, port = yield from self.address_queue.get()
+    def connect_to_remote(self, host, port):
         logging.info("connecting to %s port %d", host, port)
         try:
             peer_name = "%s:%d" % (host, port)
