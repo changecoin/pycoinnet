@@ -5,7 +5,7 @@ import binascii
 from pycoin.block import BlockHeader
 from pycoin.serialize import b2h_rev
 
-from pycoinnet.util import BlockChain
+from pycoinnet.util import BlockChain2
 
 
 def header_iter(path):
@@ -19,19 +19,23 @@ def header_iter(path):
 def h2b_rev(h):
     return bytes(reversed(binascii.unhexlify(h)))
 
-LOCAL_GENESIS = (bytes(reversed(binascii.unhexlify('000000000000003887df1f29024b06fc2200b55f8af8f35453d7be294df2d214'))), 113300798888791, 250000)
+LOCAL_GENESIS_HASH = bytes(reversed(binascii.unhexlify('000000000000003887df1f29024b06fc2200b55f8af8f35453d7be294df2d214')))
+
+LOCAL_GENESIS = BlockChain2.genesis_block_to_block_chain_record(LOCAL_GENESIS_HASH, difficulty=0, index_difficulty=(250000, 113300798888791))
 
 
 def main():
-    blockchain = BlockChain.BlockChain([LOCAL_GENESIS])
+    blockchain = BlockChain2.BlockChain()
+    blockchain.load_records([LOCAL_GENESIS])
     iter = reversed(list(header_iter("headers.bin")))
-    blockchain.load_blocks(iter)
+    blockchain.load_records(BlockChain2.block_header_to_block_chain_record(bh) for bh in iter)
     try:
+        raise Exception("foo")
+        #import pdb; pdb.set_trace()
         f = open("bc.bin", "rb")
-        blockchain = BlockChain.BlockChain.parse(f)
+        blockchain = BlockChain2.BlockChain.parse(f)
     except Exception:
         print("failed to open and parse bc.bin")
-    last_header = blockchain.longest_chain_endpoint()
     last_header = blockchain.longest_chain_endpoint()
     difficulty, block_number = blockchain.distance(last_header)
     print(b2h_rev(last_header), difficulty, block_number)
