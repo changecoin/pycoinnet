@@ -7,11 +7,6 @@ from pycoin.block import Block
 from pycoin.tx import script
 from pycoin.serialize import b2h_rev
 
-MAINNET_GENESIS = [
-    (bytes(reversed(binascii.unhexlify('000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f'))), -1, 0)
-]
-
-
 from collections import namedtuple
 
 BlockChainRecord = namedtuple("BlockChainRecord", "hash parent_hash difficulty index_difficulty".split())
@@ -23,42 +18,15 @@ def block_header_to_block_chain_record(bh):
     return BlockChainRecord(bh.hash(), bh.previous_block_hash, bh.difficulty, index_difficulty=None)
 
 class BlockChain(object):
-
-    """
-    @classmethod
-    def parse(self, f):
-        def h_p_d_iter(f):
-            count = struct.unpack("<L", f.read(4))[0]
-            p = None
-            distance = -1
-            total_difficulty = 0
-            for i in range(count):
-                h = f.read(32)
-                difficulty = struct.unpack("<L", f.read(4))[0]
-                yield BlockChainRecord(h, p, difficulty, (distance, total_difficulty))
-                distance += 1
-                total_difficulty += difficulty
-                p = h
-
-        the_blockchain = BlockChain()
-        items = h_p_d_iter(f)
-        the_blockchain.load_records(items)
-        return the_blockchain
-
-    def stream(self, f):
-        path = self.longest_path
-        f.write(struct.pack("<L", len(path)))
-        for p in path:
-            f.write(p)
-            f.write(struct.pack("<L", self.lookup.get(p).difficulty))
-    """
-    def __init__(self):
+    def __init__(self, genesis_hash=None):
         self.childless_hashes = set()
         self.unprocessed_hashes = set()
         self.lookup = {}
-        self.next_map = {}
         self._longest_chain_endpoint = None
         self._longest_path = []
+        if genesis_hash:
+            bcr = BlockChainRecord(genesis_hash, None, 0, index_difficulty=(-1,0))
+            self.load_records([bcr])
 
     def load_records(self, records_iter):
         # register everything

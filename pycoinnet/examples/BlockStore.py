@@ -37,10 +37,9 @@ class BlockStore(object):
         self.petrified_hashes_set = set(self.petrified_hashes)
         self._log_petrify()
         self.block_lookup = {}
-        self.blockchain = BlockChain2.BlockChain()
-        genesis = self.petrified_hashes[-1] if len(self.petrified_hashes) else MAINNET_GENESIS_HASH
-        logging.debug("genesis petrified hash is %s", b2h_rev(genesis))
-        self.blockchain.load_records([BlockChain2.genesis_block_to_block_chain_record(genesis)])
+        genesis_hash = self.petrified_hashes[-1] if len(self.petrified_hashes) else MAINNET_GENESIS_HASH
+        logging.debug("genesis petrified hash is %s", b2h_rev(genesis_hash))
+        self.blockchain = BlockChain2.BlockChain(genesis_hash)
         self.accept_blocks(self._load_blocks(), should_write=False)
 
     def _log_petrify(self):
@@ -149,8 +148,8 @@ class BlockStore(object):
 
         new_blockchain = BlockChain2.BlockChain()
         new_blockchain.load_records([BlockChain2.genesis_block_to_block_chain_record(petrify_list[-1])])
-        #new_blockchain.load_records(self.blockchain.record_for_hash(h) for h in petrify_list[-1:])
         new_blockchain.load_records(bcr for bcr in self.blockchain.lookup.values() if bcr.hash not in self.petrified_hashes_set)
+        # deal with orphan blocks!!
         self.blockchain = new_blockchain
 
     def longest_nonpetrified_chain(self):
