@@ -35,16 +35,21 @@ class BlockStore(object):
         self.dir_path = dir_path
         self.petrified_hashes = self._load_petrified_hashes()
         self.petrified_hashes_set = set(self.petrified_hashes)
-        logging.debug("petrified chain is length %d", len(self.petrified_hashes))
-        if len(self.petrified_hashes):
-            logging.debug("petrified chain starts with %s", b2h_rev(self.petrified_hashes[0]))
-            logging.debug("petrified chain ends with %s", b2h_rev(self.petrified_hashes[-1]))
+        self._log_petrify()
         self.block_lookup = {}
         self.blockchain = BlockChain2.BlockChain()
         genesis = self.petrified_hashes[-1] if len(self.petrified_hashes) else MAINNET_GENESIS_HASH
         logging.debug("genesis petrified hash is %s", b2h_rev(genesis))
         self.blockchain.load_records([BlockChain2.genesis_block_to_block_chain_record(genesis)])
         self.accept_blocks(self._load_blocks(), should_write=False)
+
+    def _log_petrify(self):
+        logging.debug("petrified chain is length %d", len(self.petrified_hashes))
+        if len(self.petrified_hashes):
+            logging.debug("petrified chain starts with %s", b2h_rev(self.petrified_hashes[0]))
+            logging.debug("petrified chain ends with %s", b2h_rev(self.petrified_hashes[-1]))
+        if len(self.petrified_hashes_set) < len(self.petrified_hashes):
+            logging.error("warning: petrified_hashes_set has %d members", len(self.petrified_hashes_set))
 
     def __contains__(self, h):
         if h in self.petrified_hashes_set:
@@ -85,7 +90,10 @@ class BlockStore(object):
         old_longest_chain_endpoint = self.blockchain.longest_chain_endpoint()
         self.blockchain.load_records(BlockChain2.block_header_to_block_chain_record(block) for block in block_iter(blocks))
         new_longest_chain_endpoint = self.blockchain.longest_chain_endpoint()
+        logging.debug("old chain endpoint is %s", b2h_rev(old_longest_chain_endpoint))
+        logging.debug("new chain endpoint is %s", b2h_rev(new_longest_chain_endpoint))
         common_ancestor = self.blockchain.common_ancestor(old_longest_chain_endpoint, new_longest_chain_endpoint)
+        logging.debug("common_ancestor is %s", b2h_rev(common_ancestor))
 
         new_hashes = []
         k = new_longest_chain_endpoint
@@ -93,34 +101,55 @@ class BlockStore(object):
             new_hashes.append(k)
             k = self.blockchain.record_for_hash(k).parent_hash
         # TODO: should we petrify any?
+        if new_hashes:
+            logging.debug("first new hash is %s", b2h_rev(new_hashes[-1]))
+            logging.debug("last new hash  is %s", b2h_rev(new_hashes[0]))
+        else:
+            logging.debug("no new hashes")
         return new_hashes
 
     def petrify(self, count_of_blocks):
         """
         """
+        #import pdb; pdb.set_trace()
         longest_path = self.blockchain.longest_path()
+        self._log_petrify()
+        self.blockchain._log()
         if len(self.petrified_hashes) == 0:
             petrify_list = longest_path[:count_of_blocks]
+            logging.debug("extending petrified hashes by %d items", len(petrify_list))
+            logging.debug("petrify_list starts with %s", b2h_rev(petrify_list[0]))
+            logging.debug("petrify_list ends   with %s", b2h_rev(petrify_list[-1]))
         else:
-
             petrify_list = longest_path[1:1+count_of_blocks]
-            bcr = self.blockchain.record_for_hash(longest_path[0])
+            logging.debug("extending petrified hashes by %d items", len(petrify_list))
+            logging.debug("petrify_list starts with %s", b2h_rev(petrify_list[0]))
+            logging.debug("petrify_list ends   with %s", b2h_rev(petrify_list[-1]))
+            bcr = self.blockchain.record_for_hash(petrify_list[0])
             if not bcr:
                 raise PetrifyError("blockchain has no records")
+            if bcr.parent_hash:
+                logging.debug("parent hash is %s", b2h_rev(bcr.parent_hash))
+            else:
+                logging.debug("parent hash is %s", bcr.parent_hash)
+                import pdb; pdb.set_trace()
             if self.petrified_hashes[-1] != bcr.parent_hash:
                 raise PetrifyError("blockchain does not extend petrified chain")
 
         if len(petrify_list) < count_of_blocks:
             raise PetrifyError("blockchain does not have enough records")
 
+
         self._petrify_hashes(petrify_list)
 
         # update
         self.petrified_hashes.extend(petrify_list)
         self.petrified_hashes_set.update(petrify_list)
+        self._log_petrify()
 
         new_blockchain = BlockChain2.BlockChain()
-        new_blockchain.load_records(longest_path[:1])
+        new_blockchain.load_records([BlockChain2.genesis_block_to_block_chain_record(petrify_list[-1])])
+        #new_blockchain.load_records(self.blockchain.record_for_hash(h) for h in petrify_list[-1:])
         new_blockchain.load_records(bcr for bcr in self.blockchain.lookup.values() if bcr.hash not in self.petrified_hashes_set)
         self.blockchain = new_blockchain
 
@@ -133,7 +162,7 @@ class BlockStore(object):
                 while 1:
                     d = f.read(16384)
                     if len(d) == 0: return
-                    while len(d) > 32:
+                    while len(d) >= 32:
                         yield d[:32]
                         d = d[32:]
             except Exception:

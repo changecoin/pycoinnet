@@ -109,6 +109,9 @@ class BlockChain(object):
         self.unprocessed_hashes = orphans
         self._longest_chain_endpoint = max(self.childless_hashes, key=lambda x: self.lookup.get(x).index_difficulty[-1])
         self._longest_path = [bcr.hash for bcr in self.find_path(self._longest_chain_endpoint)]
+        self._log()
+
+    def _log(self):
         logging.debug("longest chain endpoint starts with %s and is length %d", b2h_rev(self._longest_path[0]), len(self._longest_path))
         logging.debug("longest chain endpoint ends with %s and is length %d", b2h_rev(self._longest_chain_endpoint), len(self._longest_path))
 

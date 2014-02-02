@@ -44,6 +44,7 @@ class CatchupHeaders:
 
     def petrify_if_appropriate(self):
         longest = self.blockstore.longest_nonpetrified_chain()
+        logging.debug("checking petrify: longest is length %d", len(longest))
         if len(longest) > 32:
             self.blockstore.petrify(len(longest)-32)
 
@@ -53,6 +54,8 @@ class CatchupHeaders:
     def handle_msg_headers(self, peer, headers, **kwargs):
         new_headers = self.blockstore.accept_blocks(header for header, tx_count in headers)
         if len(new_headers) > 0:
+            logging.debug("CatchupHeaders got %d more headers: first one %s", len(new_headers), b2h_rev(new_headers[0]))
+            logging.debug("CatchupHeaders got %d more headers: last one %s", len(new_headers), b2h_rev(new_headers[-1]))
             self.fetch_more_headers(peer)
             self.petrify_if_appropriate()
 
@@ -80,7 +83,6 @@ def run():
         peer.register_delegate(inv_collector)
         peer.run()
         catchup = CatchupHeaders(blockstore)
-        import pdb; pdb.set_trace()
         catchup.petrify_if_appropriate()
         peer.register_delegate(catchup)
         return peer
