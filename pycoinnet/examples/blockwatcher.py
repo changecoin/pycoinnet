@@ -11,6 +11,8 @@ import logging
 
 from pycoin.serialize import b2h_rev
 
+from pycoinnet.examples.BlockStore import BlockStore
+
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peer.InvItemHandler import InvItemHandler
 from pycoinnet.peer.PingPongHandler import PingPongHandler
@@ -36,8 +38,37 @@ def show_tx(tx):
         else:
             logging.info("can't figure out destination of tx_out id %d", idx)
 
+class CatchupHeaders:
+    def __init__(self, blockstore):
+        self.blockstore = blockstore
+
+    def petrify_if_appropriate(self):
+        longest = self.blockstore.longest_nonpetrified_chain()
+        if len(longest) > 32:
+            self.blockstore.petrify(len(longest)-32)
+
+    def handle_msg_verack(self, peer, **kwargs):
+        self.fetch_more_headers(peer)
+
+    def handle_msg_headers(self, peer, headers, **kwargs):
+        new_headers = self.blockstore.accept_blocks(header for header, tx_count in headers)
+        if len(new_headers) > 0:
+            self.fetch_more_headers(peer)
+            self.petrify_if_appropriate()
+
+    def fetch_more_headers(self, peer):
+        # this really needs to use the last item in the known block chain
+        last_header = self.blockstore.last_block_hash()
+        block_number = self.blockstore.last_block_index()
+        logging.debug("block number = %d", block_number)
+        hashes = [last_header]
+        peer.send_msg(message_name="getheaders", version=1, hashes=hashes, hash_stop=last_header)
+
+
 def run():
     ADDRESS_QUEUE = Queue(maxsize=20)
+
+    blockstore = BlockStore("blockstore")
 
     inv_collector = InvCollector()
 
@@ -48,12 +79,18 @@ def run():
         PingPongHandler(peer)
         peer.register_delegate(inv_collector)
         peer.run()
+        catchup = CatchupHeaders(blockstore)
+        import pdb; pdb.set_trace()
+        catchup.petrify_if_appropriate()
+        peer.register_delegate(catchup)
         return peer
 
     cm = ConnectionManager(ADDRESS_QUEUE, create_protocol_callback)
 
     @asyncio.coroutine
     def fetch_addresses():
+        yield from ADDRESS_QUEUE.put(("127.0.0.1", 28333))
+        yield from asyncio.sleep(1800)
         for h in [
             "bitseed.xf2.org", "dnsseed.bluematt.me",
             "seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org"
@@ -100,7 +137,7 @@ def run():
 def main():
     asyncio.tasks._DEBUG = True
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format=('%(asctime)s [%(process)d] [%(levelname)s] '
                 '%(filename)s:%(lineno)d %(message)s'))
     run()

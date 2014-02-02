@@ -27,7 +27,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
 
     MAX_MESSAGE_SIZE = 2*1024*1024
 
-    def __init__(self, magic_header=binascii.unhexlify('0B110907'), *args, **kwargs):
+    def __init__(self, magic_header, *args, **kwargs):
         super(BitcoinPeerProtocol, self).__init__(*args, **kwargs)
         self.magic_header = magic_header
         self.delegate_methods = dict((event, []) for event in self.HANDLE_MESSAGE_NAMES)

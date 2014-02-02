@@ -24,6 +24,7 @@ def block_header_to_block_chain_record(bh):
 
 class BlockChain(object):
 
+    """
     @classmethod
     def parse(self, f):
         def h_p_d_iter(f):
@@ -50,7 +51,7 @@ class BlockChain(object):
         for p in path:
             f.write(p)
             f.write(struct.pack("<L", self.lookup.get(p).difficulty))
-
+    """
     def __init__(self):
         self.childless_hashes = set()
         self.unprocessed_hashes = set()
@@ -108,6 +109,8 @@ class BlockChain(object):
         self.unprocessed_hashes = orphans
         self._longest_chain_endpoint = max(self.childless_hashes, key=lambda x: self.lookup.get(x).index_difficulty[-1])
         self._longest_path = [bcr.hash for bcr in self.find_path(self._longest_chain_endpoint)]
+        logging.debug("longest chain endpoint starts with %s and is length %d", b2h_rev(self._longest_path[0]), len(self._longest_path))
+        logging.debug("longest chain endpoint ends with %s and is length %d", b2h_rev(self._longest_chain_endpoint), len(self._longest_path))
 
     def distance(self, h):
         bcr = self.lookup.get(h)
@@ -122,7 +125,9 @@ class BlockChain(object):
 
     def block_by_number(self, index):
         index -= self.lookup[self._longest_path[0]].index_difficulty[0]
-        return self._longest_path[index]
+        if 0 <= index < len(self._longest_path):
+            return self._longest_path[index]
+        return None
 
     def common_ancestor(self, block_hash_1, block_hash_2):
         while 1:
@@ -134,44 +139,3 @@ class BlockChain(object):
             if not bcr2:
                 return None
             block_hash_2 = bcr2.parent_hash
-
-    def process_longest_chain(self, block_lookup):
-        while 1:
-            block_chain = self.calculate_longest_chain()
-            tx_db = {}
-            opening_txs = {}
-            for i, block_hash in enumerate(block_chain):
-                if block_hash == BLOCK_0_HASH:
-                    continue
-                logging.debug("block %d [%s]", i, b2h_rev(block_hash))
-                block = block_lookup(block_hash)
-                if block is None:
-                    logging.error("missing block for %s", b2h_rev(block_hash))
-                    self.unregister_block(block_hash)
-                    break
-                if not self.validate_block_txs(block, tx_db, opening_txs):
-                    logging.error("failed validation in block %s", b2h_rev(block_hash))
-                    self.unregister_block(block_hash)
-                    break
-            else:
-                return block_chain
-            logging.debug("recalculating longest chain")
-
-    def validate_block_txs(self, block, tx_db, opening_txs):
-        for i, tx in enumerate(block.txs):
-            if i>0:
-                logging.debug("  tx %d [%s]", i, tx)
-            tx_hash = tx.hash()
-            tx_db[tx_hash] = tx
-            for j, tx_in in enumerate(tx.txs_in):
-                if tx_in.previous_hash != '\0' * 32 or j != 0:
-                    tx_prev = tx_db.get(tx_in.previous_hash)
-                    v = script.verify_signature(tx_prev, tx, j)
-                    logging.debug("verifying signature for %s: %s", tx_in, "OK" if v else "** BAD")
-                    if not v:
-                        logging.error("bad signature in %s [%d]", b2h_rev(tx_hash), j)
-                        return False
-                opening_txs[(tx_in.previous_hash, tx_in.previous_index)] = (tx_in, j)
-            for j, tx_out in enumerate(tx.txs_out):
-                opening_txs[(tx_hash, j)] = None
-        return True
