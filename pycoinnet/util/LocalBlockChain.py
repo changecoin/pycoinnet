@@ -27,7 +27,7 @@ class BlockHashOnly(object):
 GENESIS_TRIPLE = (-1, 0, None)
 
 class LocalBlockChain(object):
-    def __init__(self, genesis_hash, is_pregenesis_f=lambda h: False):
+    def __init__(self, genesis_hash):
         self.item_lookup = {}
         self.index_difficulty_lookup = dict()
 
@@ -35,7 +35,6 @@ class LocalBlockChain(object):
         self.trees_from_bottom = {}
 
         self.genesis_hash = genesis_hash
-        self.is_pregenesis_f = is_pregenesis_f
 
         self._longest_chain_endpoint = None
         self._longest_path = []
@@ -48,8 +47,6 @@ class LocalBlockChain(object):
         new_hashes = set()
         for item in items:
             h = item.hash()
-            if self.is_pregenesis_f(h):
-                continue
             if h in self.item_lookup:
                 continue
             #item = BlockHashOnly(h, item.previous_block_hash, item.difficulty)
