@@ -8,14 +8,13 @@ class LocalBlockChain(object):
     def __repr__(self):
         return "<LocalBlockChain: trees_fb:%s d_b_tops:%s>" % (self.trees_from_bottom, self.descendents_by_top)
 
-    def load_items(self, items):
+    def load_nodes(self, nodes):
         # register everything
         new_hashes = set()
-        for item in items:
-            h = item.hash()
+        for h, parent in nodes:
             if h in self.parent_lookup:
                 continue
-            self.parent_lookup[h] = item.previous_block_hash
+            self.parent_lookup[h] = parent
             new_hashes.add(h)
         if new_hashes:
             self.meld_new_hashes(new_hashes)
@@ -93,22 +92,13 @@ class LocalBlockChain(object):
         return v
 
     def chain_difficulty(self, chain, node_weight_f, cache={}):
-        if len(chain) == 0:
-            return 0
-        h = chain[0]
-        top_h = chain[-1]
-        key = (h, top_h)
-        if key in cache:
-            return cache[key]
-        v = node_weight_f(h) + self.chain_difficulty(chain[1:], node_weight_f, cache)
-        cache[key] = v
-        return v
+        return sum(node_weight_f(c) for c in chain)
 
-    def difficulty(self, h, node_weight_f, path_cache={}, difficulty_cache={}):
-        return self.chain_difficulty(self.maximum_path(h, path_cache), node_weight_f, difficulty_cache)
+    def difficulty(self, h, node_weight_f, path_cache={}):
+        return self.chain_difficulty(self.maximum_path(h, path_cache), node_weight_f)
 
     def longest_chains_by_difficulty(self, node_weight_f, cache={}):
-        return longest_chains(lambda c: self.chain_difficulty(c, node_weight_f, cache))
+        return self.longest_chains(lambda c: self.chain_difficulty(c, node_weight_f, cache))
 
     def find_ancestral_path(self, h1, h2, path_cache={}):
         p1 = self.maximum_path(h1, path_cache)

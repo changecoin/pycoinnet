@@ -1,8 +1,14 @@
+import binascii
 import re
 import os
 
+from pycoin.block import BlockHeader
 from pycoin.serialize import b2h_rev
 from pycoinnet.util import LocalBlockChain
+
+
+def h2b_rev(h):
+    return bytes(reversed(binascii.unhexlify(h)))
 
 
 class LocalDB(object):
@@ -28,7 +34,7 @@ class LocalDB(object):
             with open(path, "rb") as f:
                 block = BlockHeader.parse(f)
                 if block.id() == p:
-                    yield block
+                    return block
         except Exception:
             pass
 
@@ -43,4 +49,4 @@ class LocalDB(object):
         paths = os.listdir(self.dir_path)
         for p in paths:
             if re.match(r"[0-9a-f]{64}", p):
-                yield p
+                yield h2b_rev(p)

@@ -1,4 +1,4 @@
-
+import logging
 import os
 
 from pycoin.serialize import b2h_rev
@@ -37,7 +37,7 @@ class PetrifyDB(object):
 
     def index_for_hash(self, h):
         if h == self.genesis_hash:
-            return -1
+            return 0
         return self.petrified_hashes_lookup.get(h)
 
     def hash_for_index(self, idx):
@@ -47,10 +47,12 @@ class PetrifyDB(object):
             return self.petrified_hashes[idx]
 
     def item_for_hash(self, h):
-        return self.item_for_index(self.index_for_hash(h))
+        idx = self.index_for_hash(h)
+        if idx is not None:
+            return self.item_for_index(idx)
 
     def item_for_index(self, idx):
-        if idx is None or idx < 0:
+        if idx < 0:
             return BlockHashOnly(h=self.genesis_hash, previous_block_hash=b'\0'*32, difficulty=0)
         return BlockHashOnly(h=self.hash_for_index(idx), previous_block_hash=self.hash_for_index(idx-1), difficulty=0)
 
@@ -70,7 +72,7 @@ class PetrifyDB(object):
 
     def add_chain(self, items):
         last_hash = self.last_hash()
-        if items.hash() != last_hash:
+        if items[0].previous_block_hash != last_hash:
             raise PetrifyError("blockchain does not extend petrified chain (expecting %s)" % b2h_rev(last_hash))
         self._petrify_hashes(items)
 

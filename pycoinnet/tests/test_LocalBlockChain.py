@@ -15,14 +15,17 @@ def do_scramble(items, tfb, dbt):
     import itertools
     for c in itertools.permutations(items):
         lbc = LocalBlockChain()
-        lbc.load_items(c)
+        load_items(lbc, c)
         assert lbc.trees_from_bottom == tfb
         assert lbc.descendents_by_top == dbt
         lbc = LocalBlockChain()
         for b in c:
-            lbc.load_items([b])
+            load_items(lbc, [b])
         assert lbc.trees_from_bottom == tfb
         assert lbc.descendents_by_top == dbt
+
+def load_items(lbc, bhos):
+    return lbc.load_nodes((bh.h, bh.previous_block_hash) for bh in bhos)
 
 def test_basics():
     lbc = LocalBlockChain()
@@ -30,31 +33,31 @@ def test_basics():
     assert lbc.descendents_by_top == { }
     ITEMS = [BHO(i) for i in range(6)]
 
-    lbc.load_items([ITEMS[0]])
+    load_items(lbc, [ITEMS[0]])
     assert lbc.trees_from_bottom == { 0: [0, -1]}
     assert lbc.descendents_by_top == { -1: {0}}
 
-    lbc.load_items([ITEMS[1]])
+    load_items(lbc, [ITEMS[1]])
     assert lbc.trees_from_bottom == { 1: [1, 0, -1]}
     assert lbc.descendents_by_top == { -1: {1}}
 
-    lbc.load_items(ITEMS[0:2])
+    load_items(lbc, ITEMS[0:2])
     assert lbc.trees_from_bottom == { 1: [1, 0, -1]}
     assert lbc.descendents_by_top == { -1: {1}}
 
-    lbc.load_items([ITEMS[4]])
+    load_items(lbc, [ITEMS[4]])
     assert lbc.trees_from_bottom == { 1: [1, 0, -1], 4: [4, 3]}
     assert lbc.descendents_by_top == { -1: {1}, 3: {4}}
 
-    lbc.load_items([ITEMS[3]])
+    load_items(lbc, [ITEMS[3]])
     assert lbc.trees_from_bottom == { 1: [1, 0, -1], 4: [4, 3, 2]}
     assert lbc.descendents_by_top == { -1: {1}, 2: {4}}
 
-    lbc.load_items([ITEMS[5]])
+    load_items(lbc, [ITEMS[5]])
     assert lbc.trees_from_bottom == { 1: [1, 0, -1], 5: [5, 4, 3, 2]}
     assert lbc.descendents_by_top == { -1: {1}, 2: {5}}
 
-    lbc.load_items([ITEMS[2]])
+    load_items(lbc, [ITEMS[2]])
     assert lbc.trees_from_bottom == { 5: [5, 4, 3, 2, 1, 0, -1] }
     assert lbc.descendents_by_top == { -1: {5} }
 
@@ -68,23 +71,23 @@ def test_branch():
     B301 = BHO(301, 3, 10)
     B302, B303, B304 = [BHO(i) for i in range(302,305)]
 
-    lbc.load_items([B302])
+    load_items(lbc, [B302])
     assert lbc.trees_from_bottom == { 302: [302, 301]}
     assert lbc.descendents_by_top == { 301: {302}}
 
-    lbc.load_items([B304])
+    load_items(lbc, [B304])
     assert lbc.trees_from_bottom == { 302: [302, 301], 304: [304, 303]}
     assert lbc.descendents_by_top == { 301: {302}, 303: {304}}
 
-    lbc.load_items([B303])
+    load_items(lbc, [B303])
     assert lbc.trees_from_bottom == { 304: [304, 303, 302, 301] }
     assert lbc.descendents_by_top == { 301: {304} }
 
-    lbc.load_items(ITEMS)
+    load_items(lbc, ITEMS)
     assert lbc.trees_from_bottom == { 6: [6, 5, 4, 3, 2, 1, 0, -1], 304: [304, 303, 302, 301] }
     assert lbc.descendents_by_top == { -1: {6}, 301: {304} }
 
-    lbc.load_items([B301])
+    load_items(lbc, [B301])
     assert lbc.trees_from_bottom == { 6: [6, 5, 4, 3, 2, 1, 0, -1], 304: [304, 303, 302, 301, 3, 2, 1, 0, -1] }
     assert lbc.descendents_by_top == { -1: {6, 304} }
 
@@ -94,7 +97,7 @@ def test_0123():
     I2 = BHO(2)
     I3 = BHO(3, 1)
     lbc = LocalBlockChain()
-    lbc.load_items([I0, I2, I3, I1])
+    load_items(lbc, [I0, I2, I3, I1])
     assert lbc.trees_from_bottom == { 2: [2, 1, 0, -1], 3: [3, 1, 0, -1] }
     assert lbc.descendents_by_top == { -1: {2,3} }
 
@@ -104,7 +107,7 @@ def test_all_orphans():
     I2 = BHO(2)
     I3 = BHO(3)
     lbc = LocalBlockChain()
-    lbc.load_items([I2, I3, I1])
+    load_items(lbc, [I2, I3, I1])
     assert lbc.trees_from_bottom == { 3: [3, 2, 1, 0] }
     assert lbc.descendents_by_top == { 0: {3} }
 
@@ -142,7 +145,7 @@ def test_longest_chain_endpoint():
         return 10
 
     items = ITEMS + [B201, B202, B203, B204]
-    lbc.load_items(items)
+    load_items(lbc, items)
     assert lbc.difficulty(0, node_weight_f) == 10
     assert lbc.difficulty(1, node_weight_f) == 20
     assert lbc.difficulty(2, node_weight_f) == 30
@@ -160,12 +163,12 @@ def test_find_ancestral_path():
 
     lbc = LocalBlockChain()
     items = ITEMS + [B202, B203, B204]
-    lbc.load_items(items)
+    load_items(lbc, items)
 
     old_longest_chains = lbc.longest_chains()
     assert old_longest_chains == [[4, 3, 2, 1, 0, -1]]
 
-    lbc.load_items([B201])
+    load_items(lbc, [B201])
 
     new_longest_chains = lbc.longest_chains()
     for l in [204, 203, 202, 201, 2, 1, 0, -1], [4, 3, 2, 1, 0, -1]:
