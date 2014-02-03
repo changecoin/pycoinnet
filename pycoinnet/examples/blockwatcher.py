@@ -13,9 +13,9 @@ from pycoin.serialize import b2h_rev
 
 from pycoinnet.InvItem import InvItem
 
-from pycoinnet.examples.BlockChain import BlockChain
-from pycoinnet.util.PetrifyDB import PetrifyDB
+from pycoinnet.util.BlockChain import BlockChain
 from pycoinnet.util.LocalDB_RAM import LocalDB
+from pycoinnet.util.PetrifyDB import PetrifyDB
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peer.InvItemHandler import InvItemHandler
