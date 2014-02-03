@@ -5,7 +5,7 @@ import re
 
 from pycoin.block import BlockHeader
 from pycoin.serialize import b2h_rev
-from pycoinnet.util.LocalBlockChain import LocalBlockChain
+from pycoinnet.util.ChainFinder import ChainFinder
 
 
 """
@@ -26,7 +26,7 @@ Usage:
 - item_for_hash
 - petrify_blocks(subchain)
   - adds to petrified_db
-  - rebuilds LocalBlockChain object
+  - rebuilds ChainFinder object
   - remove obsolete blocks from local db
     - items moved to petrified_db
     - items pointing to now petrified chain
@@ -63,7 +63,7 @@ class BlockChain(object):
         self._create_local_block_chain()
 
     def _create_local_block_chain(self):
-        self.local_block_chain = LocalBlockChain()
+        self.local_block_chain = ChainFinder()
         self.local_block_chain.load_nodes(
             bh_to_node(self.local_db.item_for_hash(h)) for h in self.local_db.all_hashes()
                 if not self.petrify_db.hash_is_known(h))
@@ -76,12 +76,14 @@ class BlockChain(object):
                 return item.difficulty
             return 0
         if self._longest_chain_cache is None:
-            chains = self.local_block_chain.longest_chains_by_difficulty(node_weight_f)
-            chains.sort()
-            if len(chains) > 0:
-                self._longest_chain_cache = chains[0]
-            else:
-                self._longest_chain_cache = []
+            max_weight = 0
+            longest = []
+            for chain in self.local_block_chain.all_chains_ending_at(self.petrify_db.last_hash()):
+                weight = sum(node_weight_f(h) for h in chain)
+                if weight > max_weight:
+                    longest = chain
+                    max_weight = weight
+            self._longest_chain_cache = longest[:-1]
         return self._longest_chain_cache
 
     def longest_local_block_chain_length(self):
@@ -111,6 +113,9 @@ class BlockChain(object):
             return v
         return self.petrify_db.item_for_hash(h)
 
+    def last_petrified_hash(self):
+        return self.petrify_db.last_hash()
+
     def add_items(self, items):
         def items_to_add(items):
             for item in items:
@@ -126,13 +131,15 @@ class BlockChain(object):
 
         if old_longest_chain and new_longest_chain:
             old_path, new_path = self.local_block_chain.find_ancestral_path(old_longest_chain[0], new_longest_chain[0])
+            old_path = old_path[:-1]
+            new_path = new_path[:-1]
         else:
             old_path = old_longest_chain
             new_path = new_longest_chain
         if old_path:
-            logging.debug("old_path is %s", old_path[0])
+            logging.debug("old_path is %s-%s", old_path[0], old_path[-1])
         if new_path:
-            logging.debug("new_path is %s", new_path[0])
+            logging.debug("new_path is %s-%s", new_path[0], new_path[-1])
 
         unpetrified_count = self.longest_local_block_chain_length()
         to_petrify_count = self.petrify_policy(
@@ -141,19 +148,13 @@ class BlockChain(object):
         if to_petrify_count > 0:
             self._petrify_blocks(to_petrify_count)
 
-        return new_path[:-1], old_path[:-1]
+        return new_path, old_path
 
     def _petrify_blocks(self, to_petrify_count):
-        """
-        """
-        import pdb; pdb.set_trace()
         petrify_list = self.longest_local_block_chain()[-to_petrify_count:]
         petrify_list.reverse()
         if len(petrify_list) < to_petrify_count:
             raise PetrifyError("local_block_chain does not have enough records")
-
-        self.petrify_db._log()
-        #logging.debug("local_block_chain : %s", self.local_block_chain)
 
         items = [self.local_db.item_for_hash(h) for h in petrify_list]
         self.petrify_db.add_chain(items)

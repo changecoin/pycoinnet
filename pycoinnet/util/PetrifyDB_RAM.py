@@ -63,7 +63,6 @@ class PetrifyDB(object):
         return self.parent_to_0
 
     def add_chain(self, items):
-        import pdb; pdb.set_trace()
         last_hash = self.last_hash()
         logging.debug("last_hash = %s" % last_hash)
         logging.debug("hash of next block is %s", items[0].hash())

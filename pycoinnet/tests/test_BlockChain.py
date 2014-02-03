@@ -24,15 +24,17 @@ def test_basic():
     assert BC.longest_local_block_chain() == []
     assert BC.longest_local_block_chain_length() == 0
     assert BC.petrified_block_count() == 0
+    assert BC.last_petrified_hash() == parent_for_0
     assert BC.hash_is_known(0) == False
     assert BC.hash_is_known(-1) == False
     assert BC.item_for_hash(0) == None
     assert BC.item_for_hash(-1) == None
 
     new_hashes, old_hashes = BC.add_items(ITEMS[:5])
-    assert new_hashes == [4, 3, 2, 1]
+    assert new_hashes == [4, 3, 2, 1, 0]
     assert old_hashes == []
     assert BC.petrified_block_count() == 0
+    assert BC.last_petrified_hash() == parent_for_0
     assert BC.longest_local_block_chain() == [4, 3, 2, 1, 0]
     assert BC.longest_local_block_chain_length() == 5
     assert BC.block_chain_size() == 5
@@ -50,6 +52,7 @@ def test_basic():
     assert new_hashes == [6, 5]
     assert old_hashes == []
     assert BC.petrified_block_count() == 0
+    assert BC.last_petrified_hash() == parent_for_0
     assert BC.longest_local_block_chain() == [6, 5, 4, 3, 2, 1, 0]
     assert BC.longest_local_block_chain_length() == 7
     assert BC.block_chain_size() == 7
@@ -68,7 +71,7 @@ def test_basic():
     assert new_hashes == []
     assert old_hashes == []
     assert BC.petrified_block_count() == 0
-    assert BC.petrified_block_count() == 0
+    assert BC.last_petrified_hash() == parent_for_0
     assert BC.longest_local_block_chain() == [6, 5, 4, 3, 2, 1, 0]
     assert BC.longest_local_block_chain_length() == 7
     assert BC.block_chain_size() == 7
@@ -86,9 +89,10 @@ def test_basic():
     new_hashes, old_hashes = BC.add_items(ITEMS[7:10])
     assert new_hashes == [13, 12, 11, 10, 9, 8, 7]
     assert old_hashes == []
-    assert BC.longest_local_block_chain() == [13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3]
-    assert BC.longest_local_block_chain_length() == 11
+    assert BC.longest_local_block_chain() == [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]
+    assert BC.longest_local_block_chain_length() == 10
     assert BC.petrified_block_count() == 4
+    assert BC.last_petrified_hash() == 3
     assert BC.block_chain_size() == 14
     assert BC.hash_is_known(0) == True
     assert BC.hash_is_known(-1) == False
@@ -100,18 +104,39 @@ def test_basic():
     assert BC.hash_is_known(14) == False
     assert BC.item_for_hash(-1) == None
 
-    #import pdb; pdb.set_trace()
 
+    new_hashes, old_hashes = BC.add_items(ITEMS[90:])
+    assert new_hashes == []
+    assert old_hashes == []
+    assert BC.longest_local_block_chain() == [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]
+    assert BC.longest_local_block_chain_length() == 10
+    assert BC.petrified_block_count() == 4
+    assert BC.last_petrified_hash() == 3
+    assert BC.block_chain_size() == 14
+    assert BC.hash_is_known(0) == True
+    assert BC.hash_is_known(-1) == False
+    for i in range(14):
+        assert BC.hash_is_known(i) == True
+        v = BC.item_for_hash(i)
+        assert v.hash() == i
+        assert v.previous_block_hash == parent_for_0 if i==0 else i
+    assert BC.hash_is_known(14) == False
+    assert BC.item_for_hash(-1) == None
 
-    """
-    def longest_local_block_chain(self):
-    def longest_local_block_chain_length(self):
-    def block_chain_size(self):
-    def petrified_block_count(self):
-    def block_chain_size(self):
-    def hash_is_known(self, h):
-    def hash_for_index(self, idx):
-    def item_for_hash(self, h):
-    def add_items(self, items):
-    def petrify_blocks(self, to_petrify_count):
-    """
+    new_hashes, old_hashes = BC.add_items(ITEMS[14:90])
+    assert new_hashes == list(range(99,13,-1))
+    assert old_hashes == []
+    assert BC.longest_local_block_chain() == [99, 98, 97, 96, 95, 94, 93, 92, 91, 90]
+    assert BC.longest_local_block_chain_length() == 10
+    assert BC.petrified_block_count() == 90
+    assert BC.last_petrified_hash() == 89
+    assert BC.block_chain_size() == 100
+    assert BC.hash_is_known(0) == True
+    assert BC.hash_is_known(-1) == False
+    for i in range(100):
+        assert BC.hash_is_known(i) == True
+        v = BC.item_for_hash(i)
+        assert v.hash() == i
+        assert v.previous_block_hash == parent_for_0 if i==0 else i
+    assert BC.hash_is_known(100) == False
+    assert BC.item_for_hash(-1) == None

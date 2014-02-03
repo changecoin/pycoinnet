@@ -1,12 +1,12 @@
 
-class LocalBlockChain(object):
+class ChainFinder(object):
     def __init__(self):
         self.parent_lookup = {}
         self.descendents_by_top = {}
         self.trees_from_bottom = {}
 
     def __repr__(self):
-        return "<LocalBlockChain: trees_fb:%s d_b_tops:%s>" % (self.trees_from_bottom, self.descendents_by_top)
+        return "<ChainFinder: trees_fb:%s d_b_tops:%s>" % (self.trees_from_bottom, self.descendents_by_top)
 
     def load_nodes(self, nodes):
         # register everything
@@ -63,21 +63,9 @@ class LocalBlockChain(object):
             else:
                 top_descendents.add(bottom_h)
 
-    def all_chains(self):
-        for h, bottoms in self.descendents_by_top.items():
-            for bottom_h in bottoms:
-                yield self.trees_from_bottom[bottom_h]
-
-    def longest_chains(self, weight_f=lambda c: len(c)):
-        longest = []
-        max_length = 0
-        for c in self.all_chains():
-            v = weight_f(c)
-            if v > max_length:
-                max_length = v
-                longest = []
-            longest.append(c)
-        return longest
+    def all_chains_ending_at(self, h):
+        for bottom_h in self.descendents_by_top.get(h, []):
+            yield self.trees_from_bottom[bottom_h]
 
     def maximum_path(self, h, cache={}):
         v = self.trees_from_bottom.get(h)
@@ -90,15 +78,6 @@ class LocalBlockChain(object):
             v.extend(v1)
         cache[h] = v
         return v
-
-    def chain_difficulty(self, chain, node_weight_f, cache={}):
-        return sum(node_weight_f(c) for c in chain)
-
-    def difficulty(self, h, node_weight_f, path_cache={}):
-        return self.chain_difficulty(self.maximum_path(h, path_cache), node_weight_f)
-
-    def longest_chains_by_difficulty(self, node_weight_f, cache={}):
-        return self.longest_chains(lambda c: self.chain_difficulty(c, node_weight_f, cache))
 
     def find_ancestral_path(self, h1, h2, path_cache={}):
         p1 = self.maximum_path(h1, path_cache)
