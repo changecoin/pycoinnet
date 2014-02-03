@@ -33,6 +33,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.delegate_methods = dict((event, []) for event in self.HANDLE_MESSAGE_NAMES)
         self.override_msg_version_parameters = {}
         self.peername = "(unconnected)"
+        self.handshake_complete = asyncio.Future()
         ## stats
         self.bytes_read = 0
         self.bytes_writ = 0
@@ -129,6 +130,8 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             if message_name != 'verack':
                 raise BitcoinProtocolError("missing verack")
             self.trigger_event("msg_%s" % message_name, data)
+
+            self.handshake_complete.set_result(True)
 
             while self.is_running:
                 message_name, data = yield from self.parse_next_message()
