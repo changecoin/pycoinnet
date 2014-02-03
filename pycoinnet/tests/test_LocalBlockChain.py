@@ -6,16 +6,6 @@ Let's make a fake chain 1<=2<=3<=4<=...99<=100
  with branches 3<=3001<=3002<=3003<=3004
 """
 
-
-def test_1():
-    assert 1 == 1
-
-
-"""
-Let's make a fake chain 1<=2<=3<=4<=...99<=100
- with branches 3<=3001<=3002<=3003<=3004
-"""
-
 class BHO(object):
     def __init__(self, h, previous_block_hash=None, difficulty=10):
         self.h = h
@@ -26,22 +16,21 @@ class BHO(object):
     def __repr__(self):
         return "<BHO: id:%s parent:%s difficulty:%s>" % (self.h, self.previous_block_hash, self.difficulty)
 
-def do_scramble(genesis_hash, items, tfb, dbt):
+def do_scramble(items, tfb, dbt):
     import itertools
     for c in itertools.permutations(items):
-        lbc = LocalBlockChain(genesis_hash)
+        lbc = LocalBlockChain()
         lbc.load_items(c)
         assert lbc.trees_from_bottom == tfb
         assert lbc.descendents_by_top == dbt
-        lbc = LocalBlockChain(genesis_hash)
+        lbc = LocalBlockChain()
         for b in c:
             lbc.load_items([b])
         assert lbc.trees_from_bottom == tfb
         assert lbc.descendents_by_top == dbt
 
 def test_basics():
-    genesis_hash = -1
-    lbc = LocalBlockChain(genesis_hash)
+    lbc = LocalBlockChain()
     assert lbc.trees_from_bottom == { }
     assert lbc.descendents_by_top == { }
     ITEMS = [BHO(i) for i in range(6)]
@@ -74,11 +63,10 @@ def test_basics():
     assert lbc.trees_from_bottom == { 5: [5, 4, 3, 2, 1, 0, -1] }
     assert lbc.descendents_by_top == { -1: {5} }
 
-    do_scramble(genesis_hash, ITEMS, lbc.trees_from_bottom, lbc.descendents_by_top)
+    do_scramble(ITEMS, lbc.trees_from_bottom, lbc.descendents_by_top)
 
 def test_branch():
-    genesis_hash = -1
-    lbc = LocalBlockChain(genesis_hash)
+    lbc = LocalBlockChain()
     assert lbc.trees_from_bottom == { }
     assert lbc.descendents_by_top == { }
     ITEMS = [BHO(i) for i in range(7)]
@@ -110,8 +98,7 @@ def test_0123():
     I1 = BHO(1)
     I2 = BHO(2)
     I3 = BHO(3, 1)
-    genesis_hash = -1
-    lbc = LocalBlockChain(genesis_hash)
+    lbc = LocalBlockChain()
     lbc.load_items([I0, I2, I3, I1])
     assert lbc.trees_from_bottom == { 2: [2, 1, 0, -1], 3: [3, 1, 0, -1] }
     assert lbc.descendents_by_top == { -1: {2,3} }
@@ -121,22 +108,19 @@ def test_all_orphans():
     I1 = BHO(1)
     I2 = BHO(2)
     I3 = BHO(3)
-    genesis_hash = -1
-    lbc = LocalBlockChain(genesis_hash)
+    lbc = LocalBlockChain()
     lbc.load_items([I2, I3, I1])
     assert lbc.trees_from_bottom == { 3: [3, 2, 1, 0] }
     assert lbc.descendents_by_top == { 0: {3} }
 
 def test_scramble():
-    genesis_hash = -1
     ITEMS = [BHO(i, (i-1)//2, 10) for i in range(7)]
     tfb = { 3: [3, 1, 0, -1], 4: [4,1,0,-1], 5: [5,2,0,-1], 6:[6,2,0,-1] }
     dbt = { -1: {3,4,5,6}}
-    do_scramble(genesis_hash, ITEMS, tfb, dbt)
+    do_scramble(ITEMS, tfb, dbt)
 
 def test_branch_switch():
-    genesis_hash = -1
-    lbc = LocalBlockChain(genesis_hash)
+    lbc = LocalBlockChain()
     assert lbc.trees_from_bottom == { }
     assert lbc.descendents_by_top == { }
     ITEMS = [BHO(i) for i in range(4)]
@@ -146,11 +130,10 @@ def test_branch_switch():
     items = ITEMS + [B201, B202, B203, B204]
     tfb = { 204: [204, 203, 202, 201, 2, 1, 0, -1], 3:[3, 2, 1, 0, -1]}
     dbt = { -1: {3, 204}}
-    do_scramble(genesis_hash, items, tfb, dbt)
+    do_scramble(items, tfb, dbt)
 
 def test_longest_chain_endpoint():
-    genesis_hash = -1
-    lbc = LocalBlockChain(genesis_hash)
+    lbc = LocalBlockChain()
     ITEMS = [BHO(i) for i in range(5)]
     B201 = BHO(201, 2, 110)
     B202, B203, B204 = [BHO(i) for i in range(202,205)]
@@ -159,34 +142,34 @@ def test_longest_chain_endpoint():
     tfb = { 204: [204, 203, 202, 201, 2, 1, 0, -1], 4:[4, 3, 2, 1, 0, -1]}
     dbt = { -1: {3, 204}}
     lbc.load_items(items)
-    assert lbc.distance_for_hash(0) == 1
-    assert lbc.distance_for_hash(1) == 2
-    assert lbc.distance_for_hash(2) == 3
-    assert lbc.distance_for_hash(3) == 4
-    assert lbc.distance_for_hash(4) == 5
-    assert lbc.distance_for_hash(201) == 4
-    assert lbc.distance_for_hash(202) == 5
-    assert lbc.total_difficulty_for_hash(0) == 10
-    assert lbc.total_difficulty_for_hash(1) == 20
-    assert lbc.total_difficulty_for_hash(2) == 30
-    assert lbc.total_difficulty_for_hash(3) == 40
-    assert lbc.total_difficulty_for_hash(4) == 50
-    assert lbc.total_difficulty_for_hash(201) == 140
-    assert lbc.total_difficulty_for_hash(202) == 150
-    assert lbc.longest_chain_endpoint() == 204
+    assert lbc.distance_total_difficulty_basis_triple_for_hash(0) == (1, 10, -1)
+    assert lbc.distance_total_difficulty_basis_triple_for_hash(1) == (2, 20, -1)
+    assert lbc.distance_total_difficulty_basis_triple_for_hash(2) == (3, 30, -1)
+    assert lbc.distance_total_difficulty_basis_triple_for_hash(3) == (4, 40, -1)
+    assert lbc.distance_total_difficulty_basis_triple_for_hash(4) == (5, 50, -1)
+    assert lbc.distance_total_difficulty_basis_triple_for_hash(201) == (4, 140, -1)
+    assert lbc.distance_total_difficulty_basis_triple_for_hash(202) == (5, 150, -1)
 
-    lbc = LocalBlockChain(genesis_hash)
+    lbc = LocalBlockChain()
     items = ITEMS + [B202, B203, B204]
     lbc.load_items(items)
 
-    old_chain_endpoint = lbc.longest_chain_endpoint()
+    old_chain_endpoint = lbc.longest_chain_by_difficulty({ -1: 0 })
     assert old_chain_endpoint == 4
 
     lbc.load_items([B201])
 
-    new_chain_endpoint = lbc.longest_chain_endpoint()
+    new_chain_endpoint = lbc.longest_chain_by_difficulty({ -1: 0 })
     assert new_chain_endpoint == 204
 
-    new_hashes, removed_hashes = lbc.find_changed_paths(old_chain_endpoint, new_chain_endpoint)
-    assert new_hashes == [204, 203, 202, 201]
-    assert removed_hashes == [4, 3]
+    old_subpath, new_subpath = lbc.find_ancestral_path(old_chain_endpoint, new_chain_endpoint)
+    assert old_subpath == [4, 3, 2]
+    assert new_subpath == [204, 203, 202, 201, 2]
+
+    old_subpath, new_subpath = lbc.find_ancestral_path(3, new_chain_endpoint)
+    assert old_subpath == [3, 2]
+    assert new_subpath == [204, 203, 202, 201, 2]
+
+    old_subpath, new_subpath = lbc.find_ancestral_path(2, new_chain_endpoint)
+    assert old_subpath == [2]
+    assert new_subpath == [204, 203, 202, 201, 2]

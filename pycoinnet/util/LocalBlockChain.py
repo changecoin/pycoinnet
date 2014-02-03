@@ -27,17 +27,12 @@ class BlockHashOnly(object):
 GENESIS_TRIPLE = (-1, 0, None)
 
 class LocalBlockChain(object):
-    def __init__(self, genesis_hash):
+    def __init__(self):
         self.item_lookup = {}
         self.index_difficulty_lookup = dict()
 
         self.descendents_by_top = {}
         self.trees_from_bottom = {}
-
-        self.genesis_hash = genesis_hash
-
-        self._longest_chain_endpoint = None
-        self._longest_path = []
 
     def __repr__(self):
         return "<LocalBlockChain: trees_fb:%s d_b_tops:%s>" % (self.trees_from_bottom, self.descendents_by_top)
@@ -54,25 +49,6 @@ class LocalBlockChain(object):
             new_hashes.add(h)
         if new_hashes:
             self.meld_new_hashes(new_hashes)
-            self._longest_chain_endpoint = None
-
-    def find_changed_paths(self, old_chain_endpoint, new_chain_endpoint):
-
-        common_ancestor = self.common_ancestor(old_chain_endpoint, new_chain_endpoint)
-
-        new_hashes = []
-        k = new_chain_endpoint
-        while k and k != common_ancestor:
-            new_hashes.append(k)
-            k = self.item_lookup.get(k).previous_block_hash
-
-        removed_hashes = []
-        k = old_chain_endpoint
-        while k and k != common_ancestor:
-            removed_hashes.append(k)
-            k = self.item_lookup.get(k).previous_block_hash
-
-        return new_hashes, removed_hashes
 
     def meld_new_hashes(self, new_hashes):
         # make a list
@@ -118,51 +94,64 @@ class LocalBlockChain(object):
             else:
                 top_descendents.add(bottom_h)
 
-    def longest_chain_endpoint(self):
-        if not self._longest_chain_endpoint:
-            self._longest_chain_endpoint = max(self.trees_from_bottom.keys(), key=lambda h: self.total_difficulty_for_hash(h))
-        return self._longest_chain_endpoint
-
-    def distance_for_hash(self, h):
-        return self.distance_total_difficulty_for_hash(h)[0]
-
-    def total_difficulty_for_hash(self, h):
-        return self.distance_total_difficulty_for_hash(h)[-1]
-
-    def distance_total_difficulty_for_hash(self, h):
-        distance, total_difficulty, basis_hash = self._distance_triple_for_hash(h)
-        if basis_hash == self.genesis_hash:
-            return distance, total_difficulty
-        return 0, 0
-
-    def _distance_triple_for_hash(self, h):
-        v  = self.index_difficulty_lookup.get(h)
+    def longest_chain_by_difficulty(self, basis_difficulty_lookup):
+        def paths():
+            for h, bottoms in self.descendents_by_top.items():
+                if h not in basis_difficulty_lookup:
+                    continue
+                for bottom_h in bottoms:
+                    yield bottom_h
+        def path_key(bottom_h):
+            distance, total_difficulty, basis = self.distance_total_difficulty_basis_triple_for_hash(bottom_h)
+            return total_difficulty + basis_difficulty_lookup[basis]
+        return max(paths(), key=path_key)
+    """
+    def longest_chain_by_distance(self, basis_distance_lookup):
+        hashes = (h for h in self.descendents_by_top.keys() if h in basis_distance_lookup)
+        def chain_length_key(h):
+            distance, total_difficulty, basis = self.distance_total_difficulty_basis_triple_for_hash(h)
+            return distance + basis_distance_lookup[basis]
+        return max(hashes, key=chain_length_key)
+    """
+    def distance_total_difficulty_basis_triple_for_hash(self, h):
+        # is value cached?
+        v = self.index_difficulty_lookup.get(h)
         if v:
+            # yes. Does the basis now have a parent?
             distance, total_difficulty, basis_hash = v
-            if basis_hash == self.genesis_hash:
+            item = self.item_lookup.get(basis_hash)
+            if item:
+                d1, t1, bh1 = self.distance_total_difficulty_basis_triple_for_hash(item.previous_block_hash)
+                v = (d1 + distance, t1 + total_difficulty, bh1)
+                self.index_difficulty_lookup[h] = v
                 return v
+            else:
+                # we can't improve on the basis
+                return v
+
         item = self.item_lookup.get(h)
         if item:
-            distance, total_difficulty, basis_hash = self._distance_triple_for_hash(item.previous_block_hash)
+            distance, total_difficulty, basis_hash = self.distance_total_difficulty_basis_triple_for_hash(item.previous_block_hash)
             v = distance+1, total_difficulty + item.difficulty, basis_hash
         else:
             v = (0, 0, h)
         self.index_difficulty_lookup[h] = v
         return v
 
-    def _log(self):
-        logging.debug("LBC: %s", self)
-
-    def longest_path(self):
-        return self.trees_from_bottom[self.longest_chain_endpoint()]
-
-    def common_ancestor(self, block_hash_1, block_hash_2):
+    def find_ancestral_path(self, h1, h2):
+        p1, p2 = [h1], [h2]
+        did_swap = False
+        d1, td_1, b1 = self.distance_total_difficulty_basis_triple_for_hash(h1)
+        d2, td_2, b2 = self.distance_total_difficulty_basis_triple_for_hash(h2)
+        if b1 != b2:
+            return [], []
         while 1:
-            if block_hash_1 == block_hash_2:
-                return block_hash_1
-            if self.distance_for_hash(block_hash_1) > self.distance_for_hash(block_hash_2):
-                block_hash_1, block_hash_2 = block_hash_2, block_hash_1
-            bcr2 = self.item_lookup.get(block_hash_2)
-            if not bcr2:
-                return None
-            block_hash_2 = bcr2.previous_block_hash
+            if h1 == h2:
+                if did_swap:
+                    return p2, p1
+                return p1, p2
+            if d1 > d2:
+                h1, h2, p1, p2, did_swap = h2, h1, p2, p1, not did_swap
+            h2 = self.item_lookup.get(h2).previous_block_hash
+            p2.append(h2)
+            d2 -= 1
