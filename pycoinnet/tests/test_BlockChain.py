@@ -140,3 +140,32 @@ def test_basic():
         assert v.previous_block_hash == parent_for_0 if i==0 else i
     assert BC.hash_is_known(100) == False
     assert BC.item_for_hash(-1) == None
+
+def test_fork():
+    parent_for_0 = b'\0' * 32
+    # 0 <= 1 <= ... <= 5 <= 6
+    # 3 <= 301 <= 302 <= 303 <= 304 <= 305
+
+    petrify_db = PetrifyDB(parent_for_0)
+    local_db = LocalDB()
+    BC = BlockChain(local_db, petrify_db)
+    ITEMS = dict((i, BHO(i)) for i in range(7))
+    ITEMS[0].previous_block_hash = parent_for_0
+    ITEMS.update((i, BHO(i)) for i in range(301, 306))
+    ITEMS[301].previous_block_hash = 3
+
+    assert BC.longest_local_block_chain() == []
+    assert BC.longest_local_block_chain_length() == 0
+
+    # send them all except 302
+    new_hashes, old_hashes = BC.add_items((ITEMS[i] for i in ITEMS.keys() if i != 302))
+
+    assert new_hashes == [6, 5, 4, 3, 2, 1, 0]
+    assert old_hashes == []
+
+    # now send 302
+    new_hashes, old_hashes = BC.add_items([ITEMS[302]])
+
+    # we should see a change
+    assert new_hashes == [305, 304, 303, 302, 301]
+    assert old_hashes == [6, 5, 4]
