@@ -11,9 +11,11 @@ import logging
 
 from pycoin.serialize import b2h_rev
 
+from pycoinnet.InvItem import InvItem
+
 from pycoinnet.examples.BlockChain import BlockChain
 from pycoinnet.util.PetrifyDB import PetrifyDB
-from pycoinnet.util.LocalDB import LocalDB
+from pycoinnet.util.LocalDB_RAM import LocalDB
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peer.InvItemHandler import InvItemHandler
@@ -28,6 +30,9 @@ MAINNET_MAGIC_HEADER = binascii.unhexlify('F9BEB4D9')
 TESTNET_MAGIC_HEADER = binascii.unhexlify('0B110907')
 
 ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
+
+MAINNET_GENESIS_HASH = bytes(reversed(binascii.unhexlify('000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f')))
+
 
 from pycoin.convention import satoshi_to_btc
 
@@ -44,29 +49,31 @@ class CatchupHeaders:
     def __init__(self, blockchain):
         self.blockchain = blockchain
 
-    def petrify_if_appropriate(self):
-        import pdb; pdb.set_trace()
-        longest = self.blockchain.longest_local_block_chain_length()
-        logging.debug("checking petrify: longest is length %d", longest)
-        if longest > 32:
-            self.blockchain.petrify_blocks(longest-32)
-
     def handle_msg_verack(self, peer, **kwargs):
+        asyncio.Task(self.kick_off(peer))
+
+    def kick_off(self, peer):
+        genesis_block = yield from peer.request_inv_item(InvItem(ITEM_TYPE_BLOCK, MAINNET_GENESIS_HASH))
+        self.blockchain.add_items([genesis_block])
         self.fetch_more_headers(peer)
 
     def handle_msg_headers(self, peer, headers, **kwargs):
-        new_headers = self.blockchain.add_items(header for header, tx_count in headers)
-        if len(new_headers) > 0:
-            logging.debug("CatchupHeaders got %d more headers: first one %s", len(new_headers), b2h_rev(new_headers[-1]))
-            logging.debug("CatchupHeaders got %d more headers:  last one %s", len(new_headers), b2h_rev(new_headers[0]))
+        #import pdb; pdb.set_trace()
+        self.feed_blocks(peer, (header for header, tx_count in headers))
+
+    def feed_blocks(self, peer, blocks):
+        new_path, old_path = self.blockchain.add_items(blocks)
+        if len(new_path) > 0:
+            #import pdb; pdb.set_trace()
+            logging.debug("CatchupHeaders got %d more headers: first one %s", len(new_path), b2h_rev(new_path[-1]))
+            logging.debug("CatchupHeaders got %d more headers:  last one %s", len(new_path), b2h_rev(new_path[0]))
             self.fetch_more_headers(peer)
-            self.petrify_if_appropriate()
 
     def fetch_more_headers(self, peer):
         # this really needs to use the last item in the known block chain
-        block_number = self.blockchain.last_item_index()
-        last_header = self.blockchain.hash_for_index(block_number)
-        logging.debug("block number = %d", block_number)
+        #import pdb; pdb.set_trace()
+        last_header = self.blockchain.last_blockchain_hash()
+        logging.debug("last_header = %s", b2h_rev(last_header))
         hashes = [last_header]
         peer.send_msg(message_name="getheaders", version=1, hashes=hashes, hash_stop=last_header)
 
@@ -74,11 +81,8 @@ class CatchupHeaders:
 def run():
     ADDRESS_QUEUE = Queue(maxsize=20)
 
-    MAINNET_GENESIS_HASH = bytes(reversed(binascii.unhexlify('000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f')))
-
-    local_db = LocalDB("blockstore")
-    petrify_db = PetrifyDB("blockstore", MAINNET_GENESIS_HASH)
-    import pdb; pdb.set_trace()
+    local_db = LocalDB()
+    petrify_db = PetrifyDB("blockstore", b'\0'*32)
     blockchain = BlockChain(local_db, petrify_db)
 
     inv_collector = InvCollector()
@@ -91,7 +95,6 @@ def run():
         peer.register_delegate(inv_collector)
         peer.run()
         catchup = CatchupHeaders(blockchain)
-        catchup.petrify_if_appropriate()
         peer.register_delegate(catchup)
         return peer
 
