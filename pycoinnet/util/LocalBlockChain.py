@@ -7,93 +7,114 @@ from pycoin.block import Block
 from pycoin.tx import script
 from pycoin.serialize import b2h_rev
 
-from collections import namedtuple
+#from collections import namedtuple
 
-BlockChainRecord = namedtuple("BlockChainRecord", "hash parent_hash difficulty index_difficulty".split())
+#BlockChainRecord = namedtuple("BlockChainRecord", "hash parent_hash difficulty".split())
 
-def genesis_block_to_block_chain_record(hash, parent_hash=None, difficulty=0, index_difficulty=(-1, 0)):
-    return BlockChainRecord(hash, parent_hash, difficulty, index_difficulty)
+class BlockHashOnly(object):
+    __slots__ = "h previous_block_hash difficulty".split()
 
-def block_header_to_block_chain_record(bh):
-    return BlockChainRecord(bh.hash(), bh.previous_block_hash, bh.difficulty, index_difficulty=None)
+    def __init__(self, h, previous_block_hash, difficulty):
+        self.h = h
+        self.previous_block_hash = previous_block_hash
+        self.difficulty = difficulty
+
+    def hash(self):
+        return self.h
+    def __repr__(self):
+        return "<BHO: id:%s parent:%s difficulty:%s>" % (self.h, self.previous_block_hash, self.difficulty)
 
 class LocalBlockChain(object):
-    def __init__(self, petrify_db=None):
-        self.childless_hashes = set()
-        self.unprocessed_hashes = set()
-        self.petrify_db = petrify_db
-        self.lookup = {}
+    def __init__(self, genesis_hash, is_pregenesis_f=lambda h: False):
+        self.item_lookup = {}
+        self.index_difficulty_lookup = dict(genesis_hash=(-1, 0))
+
+        self.descendents_by_top = {}
+        self.trees_from_bottom = {}
+
+        self.genesis_hash = genesis_hash
+        self.is_pregenesis_f = is_pregenesis_f
+
         self._longest_chain_endpoint = None
         self._longest_path = []
-        genesis_hash = petrify_db.last_hash()
-        bcr = BlockChainRecord(genesis_hash, None, 0, index_difficulty=(-1,0))
-        import pdb; pdb.set_trace()
-        self.load_records([bcr])
 
-    def load_records(self, records_iter):
+    def __repr__(self):
+        return "<LocalBlockChain: trees_fb:%s d_b_tops:%s>" % (self.trees_from_bottom, self.descendents_by_top)
+
+    def load_items(self, items):
         # register everything
-        for bcr in records_iter:
-            if (not bcr.index_difficulty) and self.petrify_db and self.petrify_db.hash_is_known(bcr.hash):
+        new_items = []
+        for item in items:
+            h = item.hash()
+            if self.is_pregenesis_f(h):
                 continue
-            self.lookup[bcr.hash] = bcr
-            if bcr.index_difficulty:
-                self.childless_hashes.add(bcr.hash)
-            else:
-                self.unprocessed_hashes.add(bcr.hash)
-        self.process()
+            if h in self.item_lookup:
+                continue
+            #item = BlockHashOnly(h, item.previous_block_hash, item.difficulty)
+            self.item_lookup[h] = item
+            new_items.append(item)
+        if new_items:
+            for item in new_items:
+                self.meld_item(item)
+            self._longest_chain_endpoint = None
 
-    def find_path(self, hash, terminal_condition=lambda bcr: False):
-        bcr = self.lookup.get(hash)
-        path = [bcr]
-        while not terminal_condition(bcr):
-            bcr = self.lookup.get(bcr.parent_hash)
-            if not bcr:
+    def meld_item(self, item):
+        # make a list
+        h = item.hash()
+        initial_bottom_h = h
+        path = [h]
+        while item:
+            h = item.previous_block_hash
+            preceding_path = self.trees_from_bottom.get(h)
+            if preceding_path:
+                del self.trees_from_bottom[h]
+                path.extend(preceding_path)
+                # we extended an existing path. Fix up descendents_by_top
+                self.descendents_by_top[preceding_path[-1]].remove(preceding_path[0])
                 break
-            path.append(bcr)
-        path.reverse()
-        return path
+            path.append(h)
+            item = self.item_lookup.get(h)
+        self.trees_from_bottom[path[0]] = path
 
-    def find_path_to_known_difficulty(self, hash, known_orphans):
-        return self.find_path(hash, lambda bcr: bcr.index_difficulty or bcr.hash in known_orphans)
+        if len(path) <= 1:
+            # this is a lone element... don't bother trying to extend
+            return
 
-    def process(self):
-        orphans = set()
-        while len(self.unprocessed_hashes) > 0:
-            h = self.unprocessed_hashes.pop()
-            path = self.find_path_to_known_difficulty(h, orphans)
-            self.unprocessed_hashes.difference_update(bcr.hash for bcr in path[:-1])
-            start_bcr = path[0]
-            if not start_bcr.index_difficulty:
-                orphans.update(bcr.hash for bcr in path)
-                continue
+        # now, perform extensions on any trees that start below here
 
-            self.childless_hashes.difference_update(bcr.hash for bcr in path[:-1])
-            self.childless_hashes.add(path[-1].hash)
-            if start_bcr.index_difficulty:
-                distance, total_difficulty = start_bcr.index_difficulty
-                for bcr in path[1:]:
-                    distance += 1
-                    total_difficulty += bcr.difficulty
-                    self.lookup[bcr.hash] = bcr._replace(index_difficulty=(distance, total_difficulty))
-        self.unprocessed_hashes = orphans
-        self._longest_chain_endpoint = max(self.childless_hashes, key=lambda x: self.lookup.get(x).index_difficulty[-1])
-        self._longest_path = [bcr.hash for bcr in self.find_path(self._longest_chain_endpoint)]
-        self._log()
+        bottom_h, top_h = path[0], path[-1]
+
+        top_descendents = self.descendents_by_top.setdefault(top_h, set())
+        bottom_descendents = self.descendents_by_top.get(bottom_h)
+        if bottom_descendents:
+            for descendent in bottom_descendents:
+                prior_path = self.trees_from_bottom[descendent]
+                prior_path.extend(path[1:])
+                del self.trees_from_bottom[path[0]]
+            del self.descendents_by_top[bottom_h]
+            top_descendents.update(bottom_descendents)
+        else:
+            top_descendents.add(bottom_h)
+
+    def longest_chain_endpoint(self):
+        if not self._longest_chain_endpoint:
+            self._longest_chain_endpoint = max(self.trees_from_bottom.keys(), key=lambda h: self.distance_for_hash(h).index_difficulty[-1])
+        return self._longest_chain_endpoint
+
+    def distance_for_hash(self, h):
+        pass
+        self.index_difficulty_lookup
 
     def _log(self):
-        logging.debug("longest chain endpoint starts with %s and is length %d", b2h_rev(self._longest_path[0]), len(self._longest_path))
-        logging.debug("longest chain endpoint ends with %s and is length %d", b2h_rev(self._longest_chain_endpoint), len(self._longest_path))
+        logging.debug("LBC: %s", self)
 
     def distance(self, h):
         bcr = self.lookup.get(h)
         if bcr:
             return bcr.index_difficulty
 
-    def longest_chain_endpoint(self):
-        return self._longest_chain_endpoint
-
     def longest_path(self):
-        return self._longest_path
+        return self.trees_from_bottom[self.longest_chain_endpoint()]
 
     def hash_by_number(self, index):
         index -= self.lookup[self._longest_path[0]].index_difficulty[0]
