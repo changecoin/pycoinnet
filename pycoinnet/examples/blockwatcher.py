@@ -21,6 +21,7 @@ from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peer.InvItemHandler import InvItemHandler
 from pycoinnet.peer.PingPongHandler import PingPongHandler
 
+from pycoinnet.peergroup.BlockChainBuilder import BlockChainBuilder
 from pycoinnet.peergroup.ConnectionManager import ConnectionManager
 from pycoinnet.peergroup.InvCollector import InvCollector
 
@@ -45,47 +46,14 @@ def show_tx(tx):
         else:
             logging.info("can't figure out destination of tx_out id %d", idx)
 
-class CatchupHeaders:
-    def __init__(self, blockchain):
-        self.blockchain = blockchain
-
-    def handle_msg_verack(self, peer, **kwargs):
-        asyncio.Task(self.kick_off(peer))
-
-    def kick_off(self, peer):
-        genesis_block = yield from peer.request_inv_item(InvItem(ITEM_TYPE_BLOCK, MAINNET_GENESIS_HASH))
-        self.blockchain.add_items([genesis_block])
-        self.fetch_more_headers(peer)
-
-    def handle_msg_headers(self, peer, headers, **kwargs):
-        #import pdb; pdb.set_trace()
-        self.feed_blocks(peer, (header for header, tx_count in headers))
-
-    def feed_blocks(self, peer, blocks):
-        new_path, old_path = self.blockchain.add_items(blocks)
-        if len(new_path) > 0:
-            #import pdb; pdb.set_trace()
-            logging.debug("CatchupHeaders got %d more headers: first one %s", len(new_path), b2h_rev(new_path[-1]))
-            logging.debug("CatchupHeaders got %d more headers:  last one %s", len(new_path), b2h_rev(new_path[0]))
-            self.fetch_more_headers(peer)
-
-    def fetch_more_headers(self, peer):
-        # this really needs to use the last item in the known block chain
-        #import pdb; pdb.set_trace()
-        last_header = self.blockchain.last_blockchain_hash()
-        logging.debug("last_header = %s", b2h_rev(last_header))
-        hashes = [last_header]
-        peer.send_msg(message_name="getheaders", version=1, hashes=hashes, hash_stop=last_header)
-
-
 def run():
     ADDRESS_QUEUE = Queue(maxsize=20)
 
     local_db = LocalDB()
     petrify_db = PetrifyDB("blockstore", b'\0'*32)
-    blockchain = BlockChain(local_db, petrify_db)
-
+    block_chain = BlockChain(local_db, petrify_db)
     inv_collector = InvCollector()
+    block_chain_builder = BlockChainBuilder(block_chain, inv_collector)
 
     def create_protocol_callback():
         peer = BitcoinPeerProtocol(MAINNET_MAGIC_HEADER)
@@ -93,17 +61,16 @@ def run():
         InvItemHandler(peer)
         PingPongHandler(peer)
         peer.register_delegate(inv_collector)
+        peer.register_delegate(block_chain_builder)
         peer.run()
-        catchup = CatchupHeaders(blockchain)
-        peer.register_delegate(catchup)
         return peer
 
     cm = ConnectionManager(ADDRESS_QUEUE, create_protocol_callback)
 
     @asyncio.coroutine
     def fetch_addresses():
-        yield from ADDRESS_QUEUE.put(("127.0.0.1", 28333))
-        yield from asyncio.sleep(1800)
+        #yield from ADDRESS_QUEUE.put(("127.0.0.1", 28333))
+        #yield from asyncio.sleep(1800)
         for h in [
             "bitseed.xf2.org", "dnsseed.bluematt.me",
             "seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org"
@@ -115,7 +82,7 @@ def run():
                 logging.debug("got address %s", t)
 
     @asyncio.coroutine
-    def block_collector():
+    def tx_collector():
 
         @asyncio.coroutine
         def fetch_tx(item):
@@ -126,25 +93,24 @@ def run():
             #f.close()
             show_tx(tx)
 
-        @asyncio.coroutine
-        def fetch_block(item):
-            block = yield from inv_collector.download_inv_item(item)
-            name = block.id()
-            f = open("blocks/%s" % name, "wb")
-            block.stream(f)
-            f.close()
-            logging.info("WE GOT A BLOCK!! %s", block)
-
         while True:
-            item = yield from inv_collector.next_new_inv_item()
-            if item.item_type == ITEM_TYPE_TX:
-                asyncio.Task(fetch_tx(item))
-            if item.item_type == ITEM_TYPE_BLOCK:
-                asyncio.Task(fetch_block(item))
+            item = yield from inv_collector.next_new_block_inv_item()
+            asyncio.Task(fetch_tx(item))
+
+    @asyncio.coroutine
+    def watch_block_chain_builder():
+        while 1:
+            new_path, old_path = yield from block_chain_builder.block_change_queue.get()
+            logging.info("block chain has %d new items; %d total items", len(new_path), block_chain.block_chain_size())
+            import pdb; pdb.set_trace()
+            if len(old_path) > 0:
+                logging.info("block chain lost %d items!", len(old_path))
+                import pdb; pdb.set_trace()
 
     cm.run()
     asyncio.Task(fetch_addresses())
-    asyncio.Task(block_collector())
+    asyncio.Task(tx_collector())
+    asyncio.Task(watch_block_chain_builder())
 
 
 def main():

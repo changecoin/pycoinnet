@@ -14,7 +14,8 @@ ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 class InvCollector:
 
     def __init__(self):
-        self.new_inv_item_queue = Queue()
+        self.new_inv_item_tx_queue = Queue()
+        self.new_inv_item_block_queue = Queue()
 
         ## keys: InvItem objects; values: weakref.WeakSet of peers
         self.inv_item_db = {}
@@ -25,19 +26,20 @@ class InvCollector:
             if item not in self.inv_item_db:
                 # it's new!
                 self.inv_item_db[item] = Queue()
-                self.new_inv_item_queue.put_nowait(item)
+                if item.item_type == ITEM_TYPE_TX:
+                    self.new_inv_item_tx_queue.put_nowait(item)
+                elif item.item_type == ITEM_TYPE_BLOCK:
+                    self.new_inv_item_block_queue.put_nowait(item)
             self.inv_item_db[item].put_nowait(peer)
 
-    def handle_msg_notfound(self, peer, items, **kwargs):
-        logging.info("notfound from %s for items %s", peer, items)
-        for item in items:
-            future = self.inv_item_futures.get(inv_item)
-            if future:
-                future.cancel()
+    @asyncio.coroutine
+    def next_new_tx_inv_item(self):
+        v = yield from self.new_inv_item_tx_queue.get()
+        return v
 
     @asyncio.coroutine
-    def next_new_inv_item(self):
-        v = yield from self.new_inv_item_queue.get()
+    def next_new_block_inv_item(self):
+        v = yield from self.new_inv_item_block_queue.get()
         return v
 
     @asyncio.coroutine

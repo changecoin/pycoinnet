@@ -60,13 +60,14 @@ class BlockChain(object):
         self.local_db = local_db
         self.petrify_db = petrify_db
         self.petrify_policy = petrify_policy
-        self._create_local_block_chain()
+        self.excluded_hashes = set()
+        self._create_chain_finder()
 
-    def _create_local_block_chain(self):
-        self.local_block_chain = ChainFinder()
-        self.local_block_chain.load_nodes(
+    def _create_chain_finder(self):
+        self.chain_finder = ChainFinder()
+        self.chain_finder.load_nodes(
             bh_to_node(self.local_db.item_for_hash(h)) for h in self.local_db.all_hashes()
-                if not self.petrify_db.hash_is_known(h))
+                if not self.is_hash_excluded(h))
         self._longest_chain_cache = None
 
     def longest_local_block_chain(self):
@@ -78,7 +79,7 @@ class BlockChain(object):
         if self._longest_chain_cache is None:
             max_weight = 0
             longest = []
-            for chain in self.local_block_chain.all_chains_ending_at(self.petrify_db.last_hash()):
+            for chain in self.chain_finder.all_chains_ending_at(self.petrify_db.last_hash()):
                 weight = sum(node_weight_f(h) for h in chain)
                 if weight > max_weight:
                     longest = chain
@@ -88,6 +89,22 @@ class BlockChain(object):
 
     def longest_local_block_chain_length(self):
         return len(self.longest_local_block_chain())
+
+    def missing_parents(self):
+        return self.chain_finder.missing_parents()
+
+    def is_hash_excluded(self, h):
+        # an excluded hash is one that is either petrified (except the last one)
+        # or one that has been proven to be invalid because it is bogus
+        # or has an another excluded hash as parent
+        if self.petrify_db.hash_is_known(h):
+            return h != self.last_petrified_hash()
+        # TODO: add and manage a local list of excluded hashes in some hash DB
+        return h in self.excluded_hashes
+
+    def exclude_hash(self, h):
+        # add to list of excluded hashes
+        self.excluded_hashes.add(h)
 
     def last_blockchain_hash(self):
         if self.longest_local_block_chain_length() > 0:
@@ -130,12 +147,12 @@ class BlockChain(object):
                 yield bh_to_node(item)
 
         old_longest_chain = self.longest_local_block_chain()
-        self.local_block_chain.load_nodes(items_to_add(items))
+        self.chain_finder.load_nodes(items_to_add(items))
         self._longest_chain_cache = None
         new_longest_chain = self.longest_local_block_chain()
 
         if old_longest_chain and new_longest_chain:
-            old_path, new_path = self.local_block_chain.find_ancestral_path(old_longest_chain[0], new_longest_chain[0])
+            old_path, new_path = self.chain_finder.find_ancestral_path(old_longest_chain[0], new_longest_chain[0])
             old_path = old_path[:-1]
             new_path = new_path[:-1]
         else:
@@ -159,7 +176,7 @@ class BlockChain(object):
         petrify_list = self.longest_local_block_chain()[-to_petrify_count:]
         petrify_list.reverse()
         if len(petrify_list) < to_petrify_count:
-            raise PetrifyError("local_block_chain does not have enough records")
+            raise PetrifyError("chain_finder does not have enough records")
 
         items = [self.local_db.item_for_hash(h) for h in petrify_list]
         self.petrify_db.add_chain(items)
@@ -167,6 +184,6 @@ class BlockChain(object):
 
         self.local_db.remove_items_with_hash(petrify_list)
 
-        self._create_local_block_chain()
+        self._create_chain_finder()
 
         # TODO: deal with orphan blocks!!

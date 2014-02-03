@@ -120,10 +120,10 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             d.update(self.override_msg_version_parameters)
             self.send_msg("version", **d)
 
-            message_name, data = yield from self.parse_next_message()
+            message_name, version_data = yield from self.parse_next_message()
             if message_name != 'version':
                 raise BitcoinProtocolError("missing version")
-            self.trigger_event("msg_%s" % message_name, data)
+            self.trigger_event("msg_%s" % message_name, version_data)
             self.send_msg("verack")
 
             message_name, data = yield from self.parse_next_message()
@@ -131,7 +131,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
                 raise BitcoinProtocolError("missing verack")
             self.trigger_event("msg_%s" % message_name, data)
 
-            self.handshake_complete.set_result(True)
+            self.handshake_complete.set_result(version_data)
 
             while self.is_running:
                 message_name, data = yield from self.parse_next_message()
