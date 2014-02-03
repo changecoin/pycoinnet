@@ -9,8 +9,16 @@ from pycoinnet.util.LocalBlockChain import LocalBlockChain
 
 
 """
-- add_items
+BlockChain
+
+Usage:
+- create it (with a local_db, a petrify_db, and a petrify_policy)
+    - petrify_policy(petrified_chain_size, total_chain_size) => # of blocks to petrify
+
+- add_items (either a Block or a BlockHeader)
   - returns added_chain, deleted_chain (if any)
+
+
 - last_item_index
 - hash_is_known (can just use item_for_hash)
 - index_for_hash
@@ -28,22 +36,37 @@ from pycoinnet.util.LocalBlockChain import LocalBlockChain
 def bh_to_node(bh):
     return bh.hash(), bh.previous_block_hash
 
+def default_petrify_policy(unpetrified_chain_size, total_chain_size):
+    """
+    Default policy: keep all but the last ten blocks petrified.
+    """
+    return max(0, unpetrified_chain_size - 10)
+
 class BlockChain(object):
     """
-    This is a compound object that accepts blocks (or block headers) via accept_blocks and
-    returns a list of new block hashes now in the best chain. This is typically just one block.
+    This is a compound object that accepts blocks (or block headers) via add_items.
+
+    It also accepts a "petrify_policy", that is, a determination as to when blocks
+    are deemed "too far" back in the chain to ever change, and should thus be archived
+    in the petrify_db instead of hte local_db. This petrify_db can use a more efficient
+    storage mechanism.
 
     There are two chains: the local chain, which is still open to be altered if a better
     subtree is found, and the petrified chain, which will never change because it's simply
     buried too deep.
     """
 
-    def __init__(self, local_db, petrify_db):
+    def __init__(self, local_db, petrify_db, petrify_policy=default_petrify_policy):
         self.local_db = local_db
         self.petrify_db = petrify_db
+        self.petrify_policy = petrify_policy
+        self._create_local_block_chain()
+
+    def _create_local_block_chain(self):
         self.local_block_chain = LocalBlockChain()
         self.local_block_chain.load_nodes(
-            bh_to_node(self.local_db.item_for_hash(h)) for h in self.local_db.all_hashes())
+            bh_to_node(self.local_db.item_for_hash(h)) for h in self.local_db.all_hashes()
+                if not self.petrify_db.hash_is_known(h))
         self._longest_chain_cache = None
 
     def longest_local_block_chain(self):
@@ -61,8 +84,14 @@ class BlockChain(object):
                 self._longest_chain_cache = []
         return self._longest_chain_cache
 
-    def last_item_index(self):
-        return len(self.longest_local_block_chain()) + self.petrify_db.count_of_hashes()
+    def longest_local_block_chain_length(self):
+        return len(self.longest_local_block_chain())
+
+    def petrified_block_count(self):
+        return self.petrify_db.count_of_hashes()
+
+    def block_chain_size(self):
+        return self.longest_local_block_chain_length() + self.petrified_block_count()
 
     def hash_is_known(self, h):
         return self.petrify_db.hash_is_known(h) or self.local_db.hash_is_known(h)
@@ -71,9 +100,9 @@ class BlockChain(object):
         h = self.petrify_db.hash_for_index(idx)
         if h:
             return h
-        idx -= self.petrify_db.count_of_hashes()
+        idx -= self.petrified_block_count()
         lc = self.longest_local_block_chain()
-        if 0<= idx < len(lc):
+        if 0 <= idx < len(lc):
             return lc[idx]
 
     def item_for_hash(self, h):
@@ -101,21 +130,26 @@ class BlockChain(object):
             old_path = old_longest_chain
             new_path = new_longest_chain
         if old_path:
-            logging.debug("old_path is %s", b2h_rev(old_path[0]))
+            logging.debug("old_path is %s", old_path[0])
         if new_path:
-            logging.debug("new_path is %s", b2h_rev(new_path[0]))
+            logging.debug("new_path is %s", new_path[0])
 
-        return new_path[1:], old_path[1:]
+        unpetrified_count = self.longest_local_block_chain_length()
+        to_petrify_count = self.petrify_policy(
+            unpetrified_count, unpetrified_count + self.petrified_block_count())
 
-    def longest_local_block_chain_length(self):
-        return len(self.longest_local_block_chain())
+        if to_petrify_count > 0:
+            self._petrify_blocks(to_petrify_count)
 
-    def petrify_blocks(self, subchain_size):
+        return new_path[:-1], old_path[:-1]
+
+    def _petrify_blocks(self, to_petrify_count):
         """
         """
-        petrify_list = self.longest_local_block_chain()[-subchain_size:]
+        import pdb; pdb.set_trace()
+        petrify_list = self.longest_local_block_chain()[-to_petrify_count:]
         petrify_list.reverse()
-        if len(petrify_list) < subchain_size:
+        if len(petrify_list) < to_petrify_count:
             raise PetrifyError("local_block_chain does not have enough records")
 
         self.petrify_db._log()
@@ -127,9 +161,6 @@ class BlockChain(object):
 
         self.local_db.remove_items_with_hash(petrify_list)
 
-        new_blockchain = LocalBlockChain()
-        new_blockchain.load_nodes(
-            bh_to_node(self.local_db.item_for_hash(h)) for h in self.local_db.all_hashes())
+        self._create_local_block_chain()
 
         # TODO: deal with orphan blocks!!
-        self.blockchain = new_blockchain
