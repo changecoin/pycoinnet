@@ -1,11 +1,6 @@
 
 from pycoinnet.util.LocalBlockChain import LocalBlockChain
 
-"""
-Let's make a fake chain 1<=2<=3<=4<=...99<=100
- with branches 3<=3001<=3002<=3003<=3004
-"""
-
 class BHO(object):
     def __init__(self, h, previous_block_hash=None, difficulty=10):
         self.h = h
@@ -132,44 +127,53 @@ def test_branch_switch():
     dbt = { -1: {3, 204}}
     do_scramble(items, tfb, dbt)
 
+
 def test_longest_chain_endpoint():
     lbc = LocalBlockChain()
     ITEMS = [BHO(i) for i in range(5)]
     B201 = BHO(201, 2, 110)
     B202, B203, B204 = [BHO(i) for i in range(202,205)]
 
+    def node_weight_f(h):
+        if h == -1:
+            return 0
+        if h == 201:
+            return 110
+        return 10
+
     items = ITEMS + [B201, B202, B203, B204]
-    tfb = { 204: [204, 203, 202, 201, 2, 1, 0, -1], 4:[4, 3, 2, 1, 0, -1]}
-    dbt = { -1: {3, 204}}
     lbc.load_items(items)
-    assert lbc.distance_total_difficulty_basis_triple_for_hash(0) == (1, 10, -1)
-    assert lbc.distance_total_difficulty_basis_triple_for_hash(1) == (2, 20, -1)
-    assert lbc.distance_total_difficulty_basis_triple_for_hash(2) == (3, 30, -1)
-    assert lbc.distance_total_difficulty_basis_triple_for_hash(3) == (4, 40, -1)
-    assert lbc.distance_total_difficulty_basis_triple_for_hash(4) == (5, 50, -1)
-    assert lbc.distance_total_difficulty_basis_triple_for_hash(201) == (4, 140, -1)
-    assert lbc.distance_total_difficulty_basis_triple_for_hash(202) == (5, 150, -1)
+    assert lbc.difficulty(0, node_weight_f) == 10
+    assert lbc.difficulty(1, node_weight_f) == 20
+    assert lbc.difficulty(2, node_weight_f) == 30
+    assert lbc.difficulty(3, node_weight_f) == 40
+    assert lbc.difficulty(4, node_weight_f) == 50
+    assert lbc.difficulty(201, node_weight_f) == 140
+    assert lbc.difficulty(202, node_weight_f) == 150
+
+
+def test_find_ancestral_path():
+
+    ITEMS = [BHO(i) for i in range(5)]
+    B201 = BHO(201, 2, 110)
+    B202, B203, B204 = [BHO(i) for i in range(202,205)]
 
     lbc = LocalBlockChain()
     items = ITEMS + [B202, B203, B204]
     lbc.load_items(items)
 
-    old_chain_endpoint = lbc.longest_chain_by_difficulty({ -1: 0 })
-    assert old_chain_endpoint == 4
+    old_longest_chains = lbc.longest_chains()
+    assert old_longest_chains == [[4, 3, 2, 1, 0, -1]]
 
     lbc.load_items([B201])
 
-    new_chain_endpoint = lbc.longest_chain_by_difficulty({ -1: 0 })
-    assert new_chain_endpoint == 204
+    new_longest_chains = lbc.longest_chains()
+    for l in [204, 203, 202, 201, 2, 1, 0, -1], [4, 3, 2, 1, 0, -1]:
+        assert l in new_longest_chains
+    assert len(new_longest_chains) == 2
+
+    old_chain_endpoint, new_chain_endpoint = 4, 204
 
     old_subpath, new_subpath = lbc.find_ancestral_path(old_chain_endpoint, new_chain_endpoint)
     assert old_subpath == [4, 3, 2]
-    assert new_subpath == [204, 203, 202, 201, 2]
-
-    old_subpath, new_subpath = lbc.find_ancestral_path(3, new_chain_endpoint)
-    assert old_subpath == [3, 2]
-    assert new_subpath == [204, 203, 202, 201, 2]
-
-    old_subpath, new_subpath = lbc.find_ancestral_path(2, new_chain_endpoint)
-    assert old_subpath == [2]
     assert new_subpath == [204, 203, 202, 201, 2]
