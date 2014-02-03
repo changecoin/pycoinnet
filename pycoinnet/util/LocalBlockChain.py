@@ -43,7 +43,7 @@ class LocalBlockChain(object):
 
     def load_items(self, items):
         # register everything
-        new_items = []
+        new_hashes = set()
         for item in items:
             h = item.hash()
             if self.is_pregenesis_f(h):
@@ -52,49 +52,54 @@ class LocalBlockChain(object):
                 continue
             #item = BlockHashOnly(h, item.previous_block_hash, item.difficulty)
             self.item_lookup[h] = item
-            new_items.append(item)
-        if new_items:
-            for item in new_items:
-                self.meld_item(item)
+            new_hashes.add(h)
+        if new_hashes:
+            self.meld_new_hashes(new_hashes)
             self._longest_chain_endpoint = None
 
-    def meld_item(self, item):
+    def meld_new_hashes(self, new_hashes):
         # make a list
-        h = item.hash()
-        initial_bottom_h = h
-        path = [h]
-        while item:
-            h = item.previous_block_hash
-            preceding_path = self.trees_from_bottom.get(h)
-            if preceding_path:
-                del self.trees_from_bottom[h]
-                path.extend(preceding_path)
-                # we extended an existing path. Fix up descendents_by_top
-                self.descendents_by_top[preceding_path[-1]].remove(preceding_path[0])
-                break
-            path.append(h)
+        while len(new_hashes) > 0:
+            h = new_hashes.pop()
+            initial_bottom_h = h
+            path = [h]
             item = self.item_lookup.get(h)
-        self.trees_from_bottom[path[0]] = path
+            while item:
+                h = item.previous_block_hash
+                new_hashes.discard(h)
+                preceding_path = self.trees_from_bottom.get(h)
+                if preceding_path:
+                    del self.trees_from_bottom[h]
+                    path.extend(preceding_path)
+                    # we extended an existing path. Fix up descendents_by_top
+                    self.descendents_by_top[preceding_path[-1]].remove(preceding_path[0])
+                    break
+                path.append(h)
+                item = self.item_lookup.get(h)
+            self.trees_from_bottom[path[0]] = path
 
-        if len(path) <= 1:
-            # this is a lone element... don't bother trying to extend
-            return
+            if len(path) <= 1:
+                # this is a lone element... don't bother trying to extend
+                return
 
-        # now, perform extensions on any trees that start below here
+            # now, perform extensions on any trees that start below here
 
-        bottom_h, top_h = path[0], path[-1]
+            bottom_h, top_h = path[0], path[-1]
 
-        top_descendents = self.descendents_by_top.setdefault(top_h, set())
-        bottom_descendents = self.descendents_by_top.get(bottom_h)
-        if bottom_descendents:
-            for descendent in bottom_descendents:
-                prior_path = self.trees_from_bottom[descendent]
-                prior_path.extend(path[1:])
-                del self.trees_from_bottom[path[0]]
-            del self.descendents_by_top[bottom_h]
-            top_descendents.update(bottom_descendents)
-        else:
-            top_descendents.add(bottom_h)
+            top_descendents = self.descendents_by_top.setdefault(top_h, set())
+            bottom_descendents = self.descendents_by_top.get(bottom_h)
+            if bottom_descendents:
+                for descendent in bottom_descendents:
+                    prior_path = self.trees_from_bottom[descendent]
+                    prior_path.extend(path[1:])
+                    if path[0] in self.trees_from_bottom:
+                        del self.trees_from_bottom[path[0]]
+                    else:
+                        pass#import pdb; pdb.set_trace()
+                del self.descendents_by_top[bottom_h]
+                top_descendents.update(bottom_descendents)
+            else:
+                top_descendents.add(bottom_h)
 
     def longest_chain_endpoint(self):
         if not self._longest_chain_endpoint:
