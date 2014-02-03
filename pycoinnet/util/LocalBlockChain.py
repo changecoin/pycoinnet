@@ -40,9 +40,9 @@ class LocalBlockChain(object):
                 path.append(h)
             self.trees_from_bottom[path[0]] = path
 
-            if len(path) <= 1:
-                # this is a lone element... don't bother trying to extend
-                return
+            #if len(path) <= 1:
+            #    # this is a lone element... don't bother trying to extend
+            #    continue
 
             # now, perform extensions on any trees that start below here
 
