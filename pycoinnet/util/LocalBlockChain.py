@@ -24,10 +24,12 @@ class BlockHashOnly(object):
     def __repr__(self):
         return "<BHO: id:%s parent:%s difficulty:%s>" % (self.h, self.previous_block_hash, self.difficulty)
 
+GENESIS_TRIPLE = (-1, 0, None)
+
 class LocalBlockChain(object):
     def __init__(self, genesis_hash, is_pregenesis_f=lambda h: False):
         self.item_lookup = {}
-        self.index_difficulty_lookup = dict(genesis_hash=(-1, 0))
+        self.index_difficulty_lookup = dict()
 
         self.descendents_by_top = {}
         self.trees_from_bottom = {}
@@ -56,6 +58,24 @@ class LocalBlockChain(object):
         if new_hashes:
             self.meld_new_hashes(new_hashes)
             self._longest_chain_endpoint = None
+
+    def find_changed_paths(self, old_chain_endpoint, new_chain_endpoint):
+
+        common_ancestor = self.common_ancestor(old_chain_endpoint, new_chain_endpoint)
+
+        new_hashes = []
+        k = new_chain_endpoint
+        while k and k != common_ancestor:
+            new_hashes.append(k)
+            k = self.item_lookup.get(k).previous_block_hash
+
+        removed_hashes = []
+        k = old_chain_endpoint
+        while k and k != common_ancestor:
+            removed_hashes.append(k)
+            k = self.item_lookup.get(k).previous_block_hash
+
+        return new_hashes, removed_hashes
 
     def meld_new_hashes(self, new_hashes):
         # make a list
@@ -103,37 +123,49 @@ class LocalBlockChain(object):
 
     def longest_chain_endpoint(self):
         if not self._longest_chain_endpoint:
-            self._longest_chain_endpoint = max(self.trees_from_bottom.keys(), key=lambda h: self.distance_for_hash(h).index_difficulty[-1])
+            self._longest_chain_endpoint = max(self.trees_from_bottom.keys(), key=lambda h: self.total_difficulty_for_hash(h))
         return self._longest_chain_endpoint
 
     def distance_for_hash(self, h):
-        pass
-        self.index_difficulty_lookup
+        return self.distance_total_difficulty_for_hash(h)[0]
+
+    def total_difficulty_for_hash(self, h):
+        return self.distance_total_difficulty_for_hash(h)[-1]
+
+    def distance_total_difficulty_for_hash(self, h):
+        distance, total_difficulty, basis_hash = self._distance_triple_for_hash(h)
+        if basis_hash == self.genesis_hash:
+            return distance, total_difficulty
+        return 0, 0
+
+    def _distance_triple_for_hash(self, h):
+        v  = self.index_difficulty_lookup.get(h)
+        if v:
+            distance, total_difficulty, basis_hash = v
+            if basis_hash == self.genesis_hash:
+                return v
+        item = self.item_lookup.get(h)
+        if item:
+            distance, total_difficulty, basis_hash = self._distance_triple_for_hash(item.previous_block_hash)
+            v = distance+1, total_difficulty + item.difficulty, basis_hash
+        else:
+            v = (0, 0, h)
+        self.index_difficulty_lookup[h] = v
+        return v
 
     def _log(self):
         logging.debug("LBC: %s", self)
 
-    def distance(self, h):
-        bcr = self.lookup.get(h)
-        if bcr:
-            return bcr.index_difficulty
-
     def longest_path(self):
         return self.trees_from_bottom[self.longest_chain_endpoint()]
-
-    def hash_by_number(self, index):
-        index -= self.lookup[self._longest_path[0]].index_difficulty[0]
-        if 0 <= index < len(self._longest_path):
-            return self._longest_path[index]
-        return None
 
     def common_ancestor(self, block_hash_1, block_hash_2):
         while 1:
             if block_hash_1 == block_hash_2:
                 return block_hash_1
-            if self.distance(block_hash_1) > self.distance(block_hash_2):
+            if self.distance_for_hash(block_hash_1) > self.distance_for_hash(block_hash_2):
                 block_hash_1, block_hash_2 = block_hash_2, block_hash_1
-            bcr2 = self.lookup.get(block_hash_2)
+            bcr2 = self.item_lookup.get(block_hash_2)
             if not bcr2:
                 return None
-            block_hash_2 = bcr2.parent_hash
+            block_hash_2 = bcr2.previous_block_hash

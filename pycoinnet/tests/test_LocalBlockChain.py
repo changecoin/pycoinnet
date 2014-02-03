@@ -116,6 +116,17 @@ def test_0123():
     assert lbc.trees_from_bottom == { 2: [2, 1, 0, -1], 3: [3, 1, 0, -1] }
     assert lbc.descendents_by_top == { -1: {2,3} }
 
+def test_all_orphans():
+    I0 = BHO(0)
+    I1 = BHO(1)
+    I2 = BHO(2)
+    I3 = BHO(3)
+    genesis_hash = -1
+    lbc = LocalBlockChain(genesis_hash)
+    lbc.load_items([I2, I3, I1])
+    assert lbc.trees_from_bottom == { 3: [3, 2, 1, 0] }
+    assert lbc.descendents_by_top == { 0: {3} }
+
 def test_scramble():
     genesis_hash = -1
     ITEMS = [BHO(i, (i-1)//2, 10) for i in range(7)]
@@ -136,3 +147,46 @@ def test_branch_switch():
     tfb = { 204: [204, 203, 202, 201, 2, 1, 0, -1], 3:[3, 2, 1, 0, -1]}
     dbt = { -1: {3, 204}}
     do_scramble(genesis_hash, items, tfb, dbt)
+
+def test_longest_chain_endpoint():
+    genesis_hash = -1
+    lbc = LocalBlockChain(genesis_hash)
+    ITEMS = [BHO(i) for i in range(5)]
+    B201 = BHO(201, 2, 110)
+    B202, B203, B204 = [BHO(i) for i in range(202,205)]
+
+    items = ITEMS + [B201, B202, B203, B204]
+    tfb = { 204: [204, 203, 202, 201, 2, 1, 0, -1], 4:[4, 3, 2, 1, 0, -1]}
+    dbt = { -1: {3, 204}}
+    lbc.load_items(items)
+    assert lbc.distance_for_hash(0) == 1
+    assert lbc.distance_for_hash(1) == 2
+    assert lbc.distance_for_hash(2) == 3
+    assert lbc.distance_for_hash(3) == 4
+    assert lbc.distance_for_hash(4) == 5
+    assert lbc.distance_for_hash(201) == 4
+    assert lbc.distance_for_hash(202) == 5
+    assert lbc.total_difficulty_for_hash(0) == 10
+    assert lbc.total_difficulty_for_hash(1) == 20
+    assert lbc.total_difficulty_for_hash(2) == 30
+    assert lbc.total_difficulty_for_hash(3) == 40
+    assert lbc.total_difficulty_for_hash(4) == 50
+    assert lbc.total_difficulty_for_hash(201) == 140
+    assert lbc.total_difficulty_for_hash(202) == 150
+    assert lbc.longest_chain_endpoint() == 204
+
+    lbc = LocalBlockChain(genesis_hash)
+    items = ITEMS + [B202, B203, B204]
+    lbc.load_items(items)
+
+    old_chain_endpoint = lbc.longest_chain_endpoint()
+    assert old_chain_endpoint == 4
+
+    lbc.load_items([B201])
+
+    new_chain_endpoint = lbc.longest_chain_endpoint()
+    assert new_chain_endpoint == 204
+
+    new_hashes, removed_hashes = lbc.find_changed_paths(old_chain_endpoint, new_chain_endpoint)
+    assert new_hashes == [204, 203, 202, 201]
+    assert removed_hashes == [4, 3]
