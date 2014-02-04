@@ -30,10 +30,15 @@ from pycoinnet.util.Queue import Queue
 MAINNET_MAGIC_HEADER = binascii.unhexlify('F9BEB4D9')
 TESTNET_MAGIC_HEADER = binascii.unhexlify('0B110907')
 
-ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
+TESTNET_DNS_BOOTSTRAP = [
+    "bitcoin.petertodd.org", "testnet-seed.bitcoin.petertodd.org",
+    "bluematt.me", "testnet-seed.bluematt.me"
+]
 
-MAINNET_GENESIS_HASH = bytes(reversed(binascii.unhexlify('000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f')))
-
+MAINNET_DNS_BOOTSTRAP = [
+    "bitseed.xf2.org", "dnsseed.bluematt.me",
+    "seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org"
+]
 
 from pycoin.convention import satoshi_to_btc
 
@@ -56,7 +61,7 @@ def run():
     block_chain_builder = BlockChainBuilder(block_chain, inv_collector)
 
     def create_protocol_callback():
-        peer = BitcoinPeerProtocol(MAINNET_MAGIC_HEADER)
+        peer = BitcoinPeerProtocol(TESTNET_MAGIC_HEADER)
         peer.register_delegate(cm)
         InvItemHandler(peer)
         PingPongHandler(peer)
@@ -68,13 +73,10 @@ def run():
     cm = ConnectionManager(ADDRESS_QUEUE, create_protocol_callback)
 
     @asyncio.coroutine
-    def fetch_addresses():
-        #yield from ADDRESS_QUEUE.put(("127.0.0.1", 28333))
+    def fetch_addresses(dns_bootstrap):
+        yield from ADDRESS_QUEUE.put(("127.0.0.1", 38333))
         #yield from asyncio.sleep(1800)
-        for h in [
-            "bitseed.xf2.org", "dnsseed.bluematt.me",
-            "seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org"
-        ]:
+        for h in dns_bootstrap:
             r = yield from asyncio.get_event_loop().getaddrinfo(h, 8333)
             results = set(t[-1][:2] for t in r)
             for t in results:
@@ -102,13 +104,12 @@ def run():
         while 1:
             new_path, old_path = yield from block_chain_builder.block_change_queue.get()
             logging.info("block chain has %d new items; %d total items", len(new_path), block_chain.block_chain_size())
-            import pdb; pdb.set_trace()
             if len(old_path) > 0:
                 logging.info("block chain lost %d items!", len(old_path))
                 import pdb; pdb.set_trace()
 
     cm.run()
-    asyncio.Task(fetch_addresses())
+    asyncio.Task(fetch_addresses(TESTNET_DNS_BOOTSTRAP))
     asyncio.Task(tx_collector())
     asyncio.Task(watch_block_chain_builder())
 
