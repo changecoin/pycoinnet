@@ -96,7 +96,7 @@ def run():
             show_tx(tx)
 
         while True:
-            item = yield from inv_collector.next_new_block_inv_item()
+            item = yield from inv_collector.next_new_tx_inv_item()
             asyncio.Task(fetch_tx(item))
 
     @asyncio.coroutine
