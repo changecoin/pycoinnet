@@ -44,7 +44,6 @@ class InvCollector:
 
     @asyncio.coroutine
     def download_inv_item(self, inv_item, peer_timeout=15):
-        futures = []
         q = self.inv_item_db.get(inv_item)
         if not q:
             logging.error("%s is unknown", inv_item)

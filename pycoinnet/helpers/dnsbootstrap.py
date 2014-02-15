@@ -11,14 +11,7 @@ import logging
 
 from asyncio.queues import PriorityQueue
 
-from pycoin.serialize import b2h_rev
-
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
-from pycoinnet.peer.PingPongHandler import PingPongHandler
-
-from pycoinnet.peergroup.BlockChainBuilder import BlockChainBuilder
-from pycoinnet.peergroup.ConnectionManager import ConnectionManager
-from pycoinnet.peergroup.InvCollector import InvCollector
 
 from pycoinnet.util.Queue import Queue
 
@@ -34,6 +27,7 @@ MAINNET_DNS_BOOTSTRAP = [
     "seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org"
     "bitseed.xf2.org", "dnsseed.bluematt.me",
 ]
+
 
 def queue_of_addresses(magic_header=MAINNET_MAGIC_HEADER, dns_bootstrap=MAINNET_DNS_BOOTSTRAP):
     """
@@ -75,10 +69,10 @@ def queue_of_addresses(magic_header=MAINNET_MAGIC_HEADER, dns_bootstrap=MAINNET_
             try:
                 host, port = yield from superpeer_ip_queue.get()
                 peer_name = "%s:%d" % (host, port)
-                logging.debug("connecting to superpeer at %s:%d", host, port)
+                logging.debug("connecting to superpeer at %s", peer_name)
                 transport, peer = yield from asyncio.get_event_loop().create_connection(
                     lambda: BitcoinPeerProtocol(magic_header), host=host, port=port)
-                addr = GetAddrDelegate(peer, timestamp_address_queue)
+                GetAddrDelegate(peer, timestamp_address_queue)
                 peer.run()
                 logging.debug("connected to superpeer at %s:%d", host, port)
                 asyncio.wait(peer.handshake_complete)
@@ -98,12 +92,13 @@ def queue_of_addresses(magic_header=MAINNET_MAGIC_HEADER, dns_bootstrap=MAINNET_
 
     return timestamp_address_queue
 
+
 @asyncio.coroutine
 def show(timestamp_address_queue):
     while 1:
         timestamp, addr = yield from timestamp_address_queue.get()
         logging.info("@ %s with address %s", timestamp, addr)
-        import pdb; pdb.set_trace()
+
 
 def main():
     asyncio.tasks._DEBUG = True

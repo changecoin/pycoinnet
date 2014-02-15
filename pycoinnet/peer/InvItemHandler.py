@@ -10,6 +10,7 @@ ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
 logging = logging.getLogger("InvItemHandler")
 
+
 class InvItemHandler:
     def __init__(self, peer):
         self.inv_items_requested = Queue()
@@ -29,7 +30,7 @@ class InvItemHandler:
     def handle_msg_notfound(self, peer, items, **kwargs):
         logging.info("notfound from %s for items %s", peer, items)
         for item in items:
-            future = self.inv_item_futures.get(inv_item)
+            future = self.inv_item_futures.get(item)
             if future:
                 future.cancel()
 
