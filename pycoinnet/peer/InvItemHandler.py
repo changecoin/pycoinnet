@@ -19,6 +19,7 @@ class InvItemHandler:
         peer.register_delegate(self)
         self.peer = peer
         peer.request_inv_item = self.request_inv_item
+        peer.request_inv_item_future = self.request_inv_item_future
         asyncio.Task(self.run())
 
     def backlog(self):
@@ -38,6 +39,11 @@ class InvItemHandler:
                 del self.inv_item_futures[item]
                 future.cancel()
 
+    def handle_connection_lost(self, peer, exc):
+        for future in self.inv_item_futures.values():
+            if not future.done():
+                future.set_exception(exc)
+
     def fulfill(self, inv_item_type, result):
         inv_item = InvItem(inv_item_type, result.hash())
         future = self.inv_item_futures.get(inv_item)
@@ -49,11 +55,14 @@ class InvItemHandler:
                 logging.info("got %s unsolicited", result.id())
 
     def request_inv_item(self, inv_item):
-        logging.debug("request inv item %s", inv_item)
         future = asyncio.Future()
-        yield from self.inv_items_requested.put((inv_item, future))
+        self.request_inv_item_future(inv_item, future)
         yield from asyncio.wait_for(future, timeout=None)
         return future.result()
+
+    def request_inv_item_future(self, inv_item, future):
+        logging.debug("request inv item %s", inv_item)
+        self.inv_items_requested.put_nowait((inv_item, future))
 
     @asyncio.coroutine
     def run(self):

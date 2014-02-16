@@ -32,7 +32,7 @@ class Blockfetcher:
         return r
 
     def handle_connection_made(self, peer, transport):
-        self.fetch_future_lookup[peer] = asyncio.Task(self.fetch_from_peer(peer, peer.request_inv_item))
+        self.fetch_future_lookup[peer] = asyncio.Task(self.fetch_from_peer(peer, peer.request_inv_item_future))
 
     def handle_connection_lost(self, peer, exc):
         self.fetch_future_lookup[peer].cancel()
@@ -48,7 +48,7 @@ class Blockfetcher:
     #     if less than X/3 seconds used, double N
 
     @asyncio.coroutine
-    def fetch_from_peer(self, peer, request_inv_item):
+    def fetch_from_peer(self, peer, request_inv_item_future):
         version_data = yield from asyncio.wait_for(peer.handshake_complete, timeout=None)
         last_block_index = version_data["last_block_index"]
         missing = set()
@@ -73,23 +73,21 @@ class Blockfetcher:
             start_time = time.time()
             def futures_for_item(item):
                 future = asyncio.Future()
-                def f(item, future):
-                    v = yield from request_inv_item(InvItem(ITEM_TYPE_BLOCK, item[1]))
-                    future.set_result(v)
-                asyncio.Task(f(item, future))
+                request_inv_item_future(InvItem(ITEM_TYPE_BLOCK, item[1]), future)
                 return future
             futures = [futures_for_item(item) for item in items_to_try]
             done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             finish_time = time.time() - start_time
             if len(pending) > 0:
-                import pdb; pdb.set_trace()
                 per_loop = int(per_loop * 0.5 + 1)
                 logging.debug("we did not finish all of them (%f s), decreasing count per loop to %d", finish_time, per_loop)
                 done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             else:
                 if finish_time * 3 < loop_timeout:
-                    per_loop = int(0.8 + 0.4 * per_loop)
+                    per_loop = min(500, int(0.8 + 1.4 * per_loop))
                     logging.debug("we finished quickly (%f s), increasing count per loop to %d", finish_time, per_loop)
+                else:
+                    logging.debug("we finished in %f s, keeping count at %d", finish_time, per_loop)
             for future, item in zip(futures, items_to_try):
                 if future.done():
                     item[-1].set_result(future.result())

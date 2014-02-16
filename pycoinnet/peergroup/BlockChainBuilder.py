@@ -113,6 +113,6 @@ class BlockChainBuilder:
                             break
                 if len(new_path) > 0:
                     for callback in self.block_change_callbacks:
-                        callback(new_path, old_path)
+                        asyncio.get_event_loop().call_soon(callback, new_path, old_path)
                     self.peer_queue.put_nowait((priority, (peer, lbi, rate_dict)))
                 # otherwise, this peer is stupid and should be ignored
