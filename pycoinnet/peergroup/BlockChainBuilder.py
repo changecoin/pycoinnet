@@ -34,8 +34,7 @@ ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
 
 class BlockChainBuilder:
-    def __init__(self, blockchain, inv_collector, headers_only_prior_to=None):
-        self.headers_only_prior_to = headers_only_prior_to
+    def __init__(self, blockchain, inv_collector):
         self.peer_queue = Queue()
         self.block_change_callbacks = []
         self.headers_queue = Queue()

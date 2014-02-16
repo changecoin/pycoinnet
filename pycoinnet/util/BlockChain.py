@@ -175,9 +175,10 @@ class BlockChain(object):
     def _petrify_blocks(self, to_petrify_count):
         petrify_list = self.longest_local_block_chain()[-to_petrify_count:]
         petrify_list.reverse()
-        if len(petrify_list) < to_petrify_count:
-            raise PetrifyError("chain_finder does not have enough records")
+        to_petrify_count = min(to_petrify_count, len(petrify_list))
 
+        if to_petrify_count == 0:
+            return
         items = [self.local_db.item_for_hash(h) for h in petrify_list]
         self.petrify_db.add_chain(items)
         self.petrify_db._log()

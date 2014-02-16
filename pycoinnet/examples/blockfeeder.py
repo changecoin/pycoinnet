@@ -28,8 +28,8 @@ from pycoinnet.peergroup.InvCollector import InvCollector
 
 from pycoinnet.util.Queue import Queue
 
-MAINNET_MAGIC_HEADER = binascii.unhexlify('F9BEB4D9')
 TESTNET_MAGIC_HEADER = binascii.unhexlify('0B110907')
+MAINNET_MAGIC_HEADER = binascii.unhexlify('F9BEB4D9')
 
 TESTNET_DNS_BOOTSTRAP = [
     "bitcoin.petertodd.org", "testnet-seed.bitcoin.petertodd.org",
@@ -56,15 +56,15 @@ def run():
     ADDRESS_QUEUE = Queue(maxsize=20)
 
     def petrify_policy(unpetrified_chain_size, total_chain_size):
-        PETRIFY_COUNT = 230000
+        PETRIFY_COUNT = 250000
         petrified_chain_size = total_chain_size - unpetrified_chain_size
         return max(0, PETRIFY_COUNT - petrified_chain_size)
 
     local_db = LocalDB()
     petrify_db = PetrifyDB("blockstore", b'\0'*32)
-    block_chain = BlockChain(local_db, petrify_db)
+    block_chain = BlockChain(local_db, petrify_db, petrify_policy)
     inv_collector = InvCollector()
-    block_chain_builder = BlockChainBuilder(block_chain, inv_collector, petrify_policy)
+    block_chain_builder = BlockChainBuilder(block_chain, inv_collector)
     blockfetcher = Blockfetcher()
 
     def create_protocol_callback():
@@ -109,13 +109,12 @@ def run():
 
     TARGET_PEER = BitcoinPeerProtocol(MAINNET_MAGIC_HEADER)
     def connect_local():
-        import pdb; pdb.set_trace()
         host, port = "127.0.0.1", 8333
         transport, protocol = yield from asyncio.get_event_loop().create_connection(
             lambda: TARGET_PEER, host=host, port=port)
-        import pdb; pdb.set_trace()
 
     asyncio.Task(connect_local())
+    asyncio.get_event_loop().run_until_complete(TARGET_PEER.handshake_complete)
 
     def block_chain_builder_updated(new_hashes, removed_hashes):
         chain_size = block_chain.block_chain_size()
@@ -124,14 +123,20 @@ def run():
             logging.info("block chain lost %d items!", len(removed_hashes))
         ## this should call the Blockfetcher
         def task(new_hashes, removed_hashes, chain_size):
-            futures = blockfetcher.get_blocks(reversed(new_hashes), chain_size-len(new_hashes))
+            futures = blockfetcher.get_blocks(new_hashes, chain_size-len(new_hashes))
             for future in futures:
                 block = yield from asyncio.wait_for(future, timeout=None)
                 logging.info("got block %s, sending", block.id())
-                asyncio.wait(TARGET_PEER.handshake_complete, timeout=None)
                 TARGET_PEER.send_msg(message_name="block", block=block)
-        if chain_size > 252660:
-        #if chain_size > 2:
+                f = open("blockstore/%s" % block.id(), "wb")
+                block.stream(f)
+                f.close()
+        max_chain_size = TARGET_PEER.handshake_complete.result().get("last_block_index")
+        logging.info("target has %d block chain size", max_chain_size)
+        if chain_size >= max_chain_size:
+            new_hashes = list(reversed(new_hashes))
+            amount_exceeding = max_chain_size - chain_size
+            new_hashes = new_hashes[amount_exceeding:]
             asyncio.Task(task(new_hashes, removed_hashes, chain_size))
 
     block_chain_builder.add_block_change_callback(block_chain_builder_updated)
@@ -144,7 +149,7 @@ def run():
 def main():
     asyncio.tasks._DEBUG = True
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format=('%(asctime)s [%(process)d] [%(levelname)s] '
                 '%(filename)s:%(lineno)d %(message)s'))
     run()
