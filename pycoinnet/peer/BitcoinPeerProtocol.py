@@ -108,7 +108,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             methods = self.delegate_methods.get(event)
             if methods:
                 for m in methods:
-                    m(self, **data)
+                    asyncio.get_event_loop().call_soon(lambda: m(self, **data))
         else:
             logging.error("unknown event %s", event)
 
@@ -139,6 +139,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
 
             while self.is_running:
                 message_name, data = yield from self.parse_next_message()
+                self.trigger_event("msg", dict(message_name=message_name, data=data))
                 self.trigger_event("msg_%s" % message_name, data)
 
         except Exception:
@@ -185,7 +186,6 @@ class BitcoinPeerProtocol(asyncio.Protocol):
 
         # parse the blob into a BitcoinProtocolMessage object
         data = parse_from_data(message_name, message_data)
-        self.trigger_event("msg", dict(message_name=message_name, data=data))
         return message_name, data
 
     def stop(self):
