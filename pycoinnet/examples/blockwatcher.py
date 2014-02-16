@@ -15,12 +15,13 @@ from pycoinnet.InvItem import InvItem
 
 from pycoinnet.util.BlockChain import BlockChain
 from pycoinnet.util.LocalDB_RAM import LocalDB
-from pycoinnet.util.PetrifyDB import PetrifyDB
+from pycoinnet.util.PetrifyDB_RAM import PetrifyDB
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peer.InvItemHandler import InvItemHandler
 from pycoinnet.peer.PingPongHandler import PingPongHandler
 
+from pycoinnet.peergroup.Blockfetcher import Blockfetcher
 from pycoinnet.peergroup.BlockChainBuilder import BlockChainBuilder
 from pycoinnet.peergroup.ConnectionManager import ConnectionManager
 from pycoinnet.peergroup.InvCollector import InvCollector
@@ -55,10 +56,12 @@ def run():
     ADDRESS_QUEUE = Queue(maxsize=20)
 
     local_db = LocalDB()
-    petrify_db = PetrifyDB("blockstore", b'\0'*32)
+    #petrify_db = PetrifyDB("blockstore", b'\0'*32)
+    petrify_db = PetrifyDB(b'\0'*32)
     block_chain = BlockChain(local_db, petrify_db)
     inv_collector = InvCollector()
     block_chain_builder = BlockChainBuilder(block_chain, inv_collector)
+    blockfetcher = Blockfetcher()
 
     def create_protocol_callback():
         peer = BitcoinPeerProtocol(TESTNET_MAGIC_HEADER)
@@ -67,6 +70,7 @@ def run():
         PingPongHandler(peer)
         peer.register_delegate(inv_collector)
         peer.register_delegate(block_chain_builder)
+        peer.register_delegate(blockfetcher)
         peer.run()
         return peer
 
@@ -99,19 +103,19 @@ def run():
             item = yield from inv_collector.next_new_tx_inv_item()
             asyncio.Task(fetch_tx(item))
 
-    @asyncio.coroutine
-    def watch_block_chain_builder():
-        while 1:
-            new_path, old_path = yield from block_chain_builder.block_change_queue.get()
-            logging.info("block chain has %d new items; %d total items", len(new_path), block_chain.block_chain_size())
-            if len(old_path) > 0:
-                logging.info("block chain lost %d items!", len(old_path))
-                import pdb; pdb.set_trace()
+    def block_chain_builder_updated(new_hashes, removed_hashes):
+        chain_size = block_chain.block_chain_size()
+        logging.info("block chain has %d new items; %d total items", len(new_hashes), chain_size)
+        if len(removed_hashes) > 0:
+            logging.info("block chain lost %d items!", len(removed_hashes))
+        ## this should call the Blockfetcher
+        futures = blockfetcher.get_blocks(reversed(new_hashes), chain_size-len(new_hashes))
+
+    block_chain_builder.add_block_change_callback(block_chain_builder_updated)
 
     cm.run()
     asyncio.Task(fetch_addresses(TESTNET_DNS_BOOTSTRAP))
     asyncio.Task(tx_collector())
-    asyncio.Task(watch_block_chain_builder())
 
 
 def main():

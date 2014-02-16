@@ -21,6 +21,9 @@ class InvItemHandler:
         peer.request_inv_item = self.request_inv_item
         asyncio.Task(self.run())
 
+    def backlog(self):
+        return len(self.inv_item_futures) + self.inv_items_requested.size()
+
     def handle_msg_tx(self, peer, tx, **kwargs):
         self.fulfill(ITEM_TYPE_TX, tx)
 
@@ -32,23 +35,25 @@ class InvItemHandler:
         for item in items:
             future = self.inv_item_futures.get(item)
             if future:
+                del self.inv_item_futures[item]
                 future.cancel()
 
     def fulfill(self, inv_item_type, result):
         inv_item = InvItem(inv_item_type, result.hash())
         future = self.inv_item_futures.get(inv_item)
         if future:
+            del self.inv_item_futures[inv_item]
             if not future.done():
                 future.set_result(result)
             else:
                 logging.info("got %s unsolicited", result.id())
 
-    @asyncio.coroutine
     def request_inv_item(self, inv_item):
+        logging.debug("request inv item %s", inv_item)
         future = asyncio.Future()
         yield from self.inv_items_requested.put((inv_item, future))
-        done, pending = yield from asyncio.wait([future])
-        return done.pop().result()
+        yield from asyncio.wait_for(future, timeout=None)
+        return future.result()
 
     @asyncio.coroutine
     def run(self):
