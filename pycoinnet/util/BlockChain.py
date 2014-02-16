@@ -108,7 +108,7 @@ class BlockChain(object):
 
     def last_blockchain_hash(self):
         if self.longest_local_block_chain_length() > 0:
-            return self.longest_local_block_chain()[-1]
+            return self.longest_local_block_chain()[0]
         return self.petrify_db.last_hash()
 
     def petrified_block_count(self):
