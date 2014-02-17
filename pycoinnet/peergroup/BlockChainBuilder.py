@@ -36,17 +36,43 @@ ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 class BlockChainBuilder:
     def __init__(self, blockchain, inv_collector):
         self.peer_queue = Queue()
-        self.block_change_callbacks = []
         self.headers_queue = Queue()
+        self.block_change_queues = set()
         asyncio.Task(self.run_ff(blockchain))
         #asyncio.Task(self.watch_inv_collector(blockchain, inv_collector))
 
-    def add_block_change_callback(self, callback):
+    def new_block_change_queue(self):
         """
-        The callback is invoked (in a task) with (new_path, removed_path) where
-        the paths are lists of hashes.
+        Return a Queue that yields tuples of (op, block_hash, block_index) where
+        op is one of "add" or "remove" and
+        block_hash is a block hash
+        block_index is the block index
         """
-        self.block_change_callbacks.append(callback)
+        q = Queue()
+        self.block_change_queues.add(q)
+        return q
+
+    def update_q(self, q, new_path, old_path, common_index):
+        while len(old_path) > 0:
+            last = q.pop()
+            if old_path[-1] != last[1]:
+                q.put_nowait(last)
+                break
+            old_path.pop()
+        while len(old_path) > 0:
+            h = old_path.pop()
+            t = ("remove", h, common_index + len(old_path))
+            q.put_nowait(t)
+        idx = common_index
+        while len(new_path) > 0:
+            h = new_path.pop()
+            t = ("add", h, idx)
+            idx += 1
+            q.put_nowait(t)
+
+    def update_qs(self, new_path, old_path, common_index):
+        for q in self.block_change_queues:
+            self.update_q(q, list(new_path), list(old_path), common_index)
 
     def handle_msg_version(self, peer, **kwargs):
         lbi = kwargs.get("last_block_index")
@@ -111,7 +137,6 @@ class BlockChainBuilder:
                         else:
                             break
                 if len(new_path) > 0:
-                    for callback in self.block_change_callbacks:
-                        asyncio.get_event_loop().call_soon(callback, new_path, old_path)
+                    self.update_qs(new_path, old_path, blockchain.block_chain_size() - len(new_path))
                     self.peer_queue.put_nowait((priority, (peer, lbi, rate_dict)))
                 # otherwise, this peer is stupid and should be ignored

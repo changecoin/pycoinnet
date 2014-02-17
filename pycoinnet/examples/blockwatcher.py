@@ -64,7 +64,7 @@ def run():
     blockfetcher = Blockfetcher()
 
     def create_protocol_callback():
-        peer = BitcoinPeerProtocol(TESTNET_MAGIC_HEADER)
+        peer = BitcoinPeerProtocol(MAINNET_MAGIC_HEADER)
         peer.register_delegate(cm)
         InvItemHandler(peer)
         PingPongHandler(peer)
@@ -78,8 +78,8 @@ def run():
 
     @asyncio.coroutine
     def fetch_addresses(dns_bootstrap):
-        yield from ADDRESS_QUEUE.put(("127.0.0.1", 38333))
-        #yield from asyncio.sleep(1800)
+        yield from ADDRESS_QUEUE.put(("127.0.0.1", 28333))
+        yield from asyncio.sleep(18000)
         for h in dns_bootstrap:
             r = yield from asyncio.get_event_loop().getaddrinfo(h, 8333)
             results = set(t[-1][:2] for t in r)
@@ -103,19 +103,32 @@ def run():
             item = yield from inv_collector.next_new_tx_inv_item()
             asyncio.Task(fetch_tx(item))
 
-    def block_chain_builder_updated(new_hashes, removed_hashes):
-        chain_size = block_chain.block_chain_size()
-        logging.info("block chain has %d new items; %d total items", len(new_hashes), chain_size)
-        if len(removed_hashes) > 0:
-            logging.info("block chain lost %d items!", len(removed_hashes))
-        ## this should call the Blockfetcher
-        futures = blockfetcher.get_blocks(reversed(new_hashes), chain_size-len(new_hashes))
+    block_change_queue = block_chain_builder.new_block_change_queue()
 
-    block_chain_builder.add_block_change_callback(block_chain_builder_updated)
+    @asyncio.coroutine
+    def monitor_block_change_queue(q):
+        while True:
+            op, the_hash, block_index = yield from q.get()
+            if op == "add":
+                logging.debug("adding block with hash %s", b2h_rev(the_hash))
+                if block_index >= 284567:
+                    asyncio.Task(grab_block(the_hash, block_index))
+            if op == "remove":
+                pass
+
+    @asyncio.coroutine
+    def grab_block(the_hash, block_index):
+        block = yield from blockfetcher.get_block(the_hash, block_index)
+        logging.info("got block %s", block.id())
+        f = open("blockstore/block-%06d-%s.bin" % (block_index, block.id()), "wb")
+        block.stream(f)
+        f.close()
+
+    asyncio.Task(monitor_block_change_queue(block_change_queue))
 
     cm.run()
-    asyncio.Task(fetch_addresses(TESTNET_DNS_BOOTSTRAP))
-    asyncio.Task(tx_collector())
+    asyncio.Task(fetch_addresses(MAINNET_DNS_BOOTSTRAP))
+    #asyncio.Task(tx_collector())
 
 
 def main():

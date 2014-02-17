@@ -31,6 +31,13 @@ class Blockfetcher:
             r.append(future)
         return r
 
+    def get_block(self, block_hash, block_index):
+        future = asyncio.Future()
+        item = (block_index, block_hash, future)
+        self.block_hash_priority_queue.put_nowait(item)
+        block = yield from asyncio.wait_for(future, timeout=None)
+        return block
+
     def handle_connection_made(self, peer, transport):
         self.fetch_future_lookup[peer] = asyncio.Task(self.fetch_from_peer(peer, peer.request_inv_item_future))
 
