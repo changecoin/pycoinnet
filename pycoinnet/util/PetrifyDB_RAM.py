@@ -27,8 +27,8 @@ class PetrifyDB(object):
     def _log(self):
         logging.debug("petrified chain is length %d", len(self.petrified_hashes))
         if len(self.petrified_hashes):
-            logging.debug("petrified chain starts with %s", self.petrified_hashes[0])
-            logging.debug("petrified chain ends with %s", self.petrified_hashes[-1])
+            logging.debug("petrified chain starts with %s", b2h_rev(self.petrified_hashes[0]))
+            logging.debug("petrified chain ends with %s", b2h_rev(self.petrified_hashes[-1]))
         if len(self.petrified_hashes_lookup) < len(self.petrified_hashes):
             logging.error("warning: petrified_hashes_lookup has %d members", len(self.petrified_hashes_lookup))
 

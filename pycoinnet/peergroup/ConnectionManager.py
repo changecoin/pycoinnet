@@ -20,10 +20,6 @@ class ConnectionManager:
         self.min_connection_count = min_connection_count
         self.max_connection_count = max_connection_count
 
-    def handle_connection_made(self, peer, transport):
-        logging.debug("connection made %s", transport)
-        self.peers_connected.add(peer)
-
     def handle_connection_lost(self, peer, exc):
         self.peers_connected.remove(peer)
 
@@ -55,6 +51,7 @@ class ConnectionManager:
             transport, protocol = yield from asyncio.get_event_loop().create_connection(
                 self.peer_protocol_factory, host=host, port=port)
             logging.info("connected (tcp) to %s:%d", host, port)
+            self.peers_connected.add(protocol)
         except Exception:
             logging.exception("failed to connect to %s:%d", host, port)
         self.peers_connecting.remove(peer_name)
