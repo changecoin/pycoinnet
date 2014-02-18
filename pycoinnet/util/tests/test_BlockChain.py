@@ -1,6 +1,6 @@
 
 from pycoinnet.util.BlockChain import BlockChain
-from pycoinnet.util.PetrifyDB_RAM import PetrifyDB
+from pycoinnet.util.PetrifyDB_RAM import PetrifyDB_RAM
 from pycoinnet.util.LocalDB_RAM import LocalDB
 
 
@@ -19,7 +19,7 @@ class BHO(object):
 
 def test_basic():
     parent_for_0 = "motherless"
-    petrify_db = PetrifyDB(parent_for_0)
+    petrify_db = PetrifyDB_RAM(parent_for_0)
     local_db = LocalDB()
     BC = BlockChain(local_db, petrify_db)
     ITEMS = [BHO(i) for i in range(100)]
@@ -157,7 +157,7 @@ def test_fork():
     # 0 <= 1 <= ... <= 5 <= 6
     # 3 <= 301 <= 302 <= 303 <= 304 <= 305
 
-    petrify_db = PetrifyDB(parent_for_0)
+    petrify_db = PetrifyDB_RAM(parent_for_0)
     local_db = LocalDB()
     BC = BlockChain(local_db, petrify_db)
     ITEMS = dict((i, BHO(i)) for i in range(7))
