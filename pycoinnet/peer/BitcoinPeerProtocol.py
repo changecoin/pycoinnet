@@ -12,9 +12,6 @@ from pycoinnet.message import MESSAGE_STRUCTURES
 from pycoinnet.PeerAddress import PeerAddress
 
 
-ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
-
-
 class BitcoinProtocolError(Exception):
     pass
 
