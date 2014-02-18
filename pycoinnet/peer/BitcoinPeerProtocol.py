@@ -20,18 +20,12 @@ class BitcoinProtocolError(Exception):
 
 class BitcoinPeerProtocol(asyncio.Protocol):
 
-    HANDLE_MESSAGE_NAMES = ["msg_%s" % msg_name for msg_name in MESSAGE_STRUCTURES.keys()]
-    HANDLE_MESSAGE_NAMES.extend(["msg", "connection_made", "connection_lost"])
-
     MAX_MESSAGE_SIZE = 2*1024*1024
 
     def __init__(self, magic_header, *args, **kwargs):
         super(BitcoinPeerProtocol, self).__init__(*args, **kwargs)
         self.magic_header = magic_header
-        self.delegate_methods = dict((event, []) for event in self.HANDLE_MESSAGE_NAMES)
-        self.override_msg_version_parameters = {}
         self.peername = "(unconnected)"
-        self.handshake_complete = asyncio.Future()
         self.connection_was_lost = asyncio.Future()
         self._request_handle = None
         self.message_queues = weakref.WeakSet()
@@ -44,10 +38,16 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         @asyncio.coroutine
         def run(self):
             while True:
-                message_name, data = yield from self._parse_next_message()
+                try:
+                    message_name, data = yield from self._parse_next_message()
+                except Exception:
+                    logging.exception("error in _parse_next_message")
+                    message_name = None
                 for q in self.message_queues:
                     if q.filter_f(message_name, data):
                         q.put_nowait((message_name, data))
+                if message_name is None:
+                    break
 
         q = Queue(maxsize=maxsize)
         q.filter_f = filter_f
@@ -77,8 +77,6 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def connection_made(self, transport):
         self.transport = transport
         self.reader = asyncio.StreamReader()
-        #self._request_handle = asyncio.async(self.run())
-        self.trigger_event("connection_made", dict(transport=transport))
         self._is_writable = True
         self.peername = transport.get_extra_info("socket").getpeername()
         self.connect_start_time = time.time()
@@ -86,7 +84,6 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def connection_lost(self, exc):
         self.connection_was_lost.set_exception(exc)
         self._request_handle.cancel()
-        self.trigger_event("connection_lost", dict(exc=exc))
 
     def data_received(self, data):
         self.bytes_read += len(data)
@@ -109,31 +106,28 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         blob = yield from reader.readexactly(len(self.magic_header))
         if blob != self.magic_header:
             s = "bad magic: got %s" % binascii.hexlify(blob)
-            logging.error(s)
             raise BitcoinProtocolError(s)
 
         # read message name
-        message_name_bytes = yield from reader.readexactly(12)
+        message_size_hash_bytes = yield from reader.readexactly(20)
+        message_name_bytes = message_size_hash_bytes[:12]
         message_name = message_name_bytes.replace(b"\0", b"").decode("utf8")
 
         # get size of message
-        size_bytes = yield from reader.readexactly(4)
+        size_bytes = message_size_hash_bytes[12:16]
         size = int.from_bytes(size_bytes, byteorder="little")
         if size > self.MAX_MESSAGE_SIZE:
             raise BitcoinProtocolError("absurdly large message size %d" % size)
 
         # read the hash, then the message
-        transmitted_hash = yield from reader.readexactly(4)
+        transmitted_hash = message_size_hash_bytes[16:20]
         message_data = yield from reader.readexactly(size)
 
         # check the hash
         actual_hash = encoding.double_sha256(message_data)[:4]
-        if actual_hash == transmitted_hash:
-            logging.debug("checksum is CORRECT")
-        else:
+        if actual_hash != transmitted_hash:
             s = "checksum is WRONG: %s instead of %s" % (
                 binascii.hexlify(actual_hash), binascii.hexlify(transmitted_hash))
-            logging.error(s)
             raise BitcoinProtocolError(s)
 
         logging.debug("message %s: %s (%d byte payload)", self, message_name, len(message_data))
@@ -148,28 +142,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def __repr__(self):
         return "<Peer %s>" % str(self.peername)
 
-
-
-    def register_delegate(self, delegate):
-        """
-        Call this method with your delegate, and any methods it contains
-        named handle_(event) where event is from the list HANDLE_MESSAGE_NAMES
-        will be invoked when the event occurs or message comes in.
-
-        The first parameter will be the BitcoinPeerProtocol (the "self"
-        here, so your delegate can optionally manage many peers).
-        """
-        for event in self.HANDLE_MESSAGE_NAMES:
-            method_name = "handle_%s" % event
-            if hasattr(delegate, method_name):
-                self.delegate_methods[event].append(getattr(delegate, method_name))
-
-    def unregister_delegate(self, delegate):
-        for event in self.HANDLE_MESSAGE_NAMES:
-            method_name = "handle_%s" % event
-            if hasattr(delegate, method_name):
-                self.delegate_methods[event].remove(getattr(delegate, method_name))
-
+    '''
     def default_msg_version_parameters(self):
         remote_ip, remote_port = self.peername
         remote_addr = PeerAddress(1, remote_ip, remote_port)
@@ -189,52 +162,8 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         """
         self.override_msg_version_parameters.update(d)
 
-    def trigger_event(self, event, data):
-        if event in self.delegate_methods:
-            methods = self.delegate_methods.get(event)
-            if methods:
-                for m in methods:
-                    asyncio.get_event_loop().call_soon(lambda: m(self, **data))
-        else:
-            logging.error("unknown event %s", event)
-
-    @asyncio.coroutine
-    def run(self):
-        try:
-            # do handshake
-
-            self.is_running = True
-
-            ## BRAIN DAMAGE: this should be better
-            d = self.default_msg_version_parameters()
-            d.update(self.override_msg_version_parameters)
-            self.send_msg("version", **d)
-
-            message_name, version_data = yield from self._parse_next_message()
-            if message_name != 'version':
-                raise BitcoinProtocolError("missing version")
-            self.trigger_event("msg_%s" % message_name, version_data)
-            self.send_msg("verack")
-
-            message_name, data = yield from self._parse_next_message()
-            if message_name != 'verack':
-                raise BitcoinProtocolError("missing verack")
-            self.trigger_event("msg_%s" % message_name, data)
-
-            self.handshake_complete.set_result(version_data)
-
-            while self.is_running:
-                message_name, data = yield from self._parse_next_message()
-                self.trigger_event("msg", dict(message_name=message_name, data=data))
-                self.trigger_event("msg_%s" % message_name, data)
-
-        except Exception:
-            logging.exception("message parse failed in %s", self.peername)
-
-        self.transport.close()
-
     def stop(self):
         self.transport.close()
         ## is this necessary?
         #self._request_handle.cancel()
-
+    '''
