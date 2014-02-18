@@ -33,3 +33,7 @@ class PeerAddress(object):
             ip_bin = ip_bin[len(IP4_HEADER):]
         ip_int = int.from_bytes(ip_bin, byteorder="big")
         return self(services, ip_int, port)
+
+    def __eq__(self, other):
+        return self.services == other.services and \
+            self.ip_address == other.ip_address and self.port == other.port
