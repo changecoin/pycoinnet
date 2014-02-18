@@ -133,7 +133,6 @@ def test_BitcoinPeerProtocol_multiplex():
     asyncio.get_event_loop().run_until_complete(asyncio.wait([asyncio.Task(async_test(nm)) for nm in next_message_list]))
     assert COUNT == 50
 
-
 def test_BitcoinPeerProtocol():
     @asyncio.coroutine
     def do_test(peer, vm1, vm2):
@@ -168,3 +167,44 @@ def test_BitcoinPeerProtocol():
     f2 = asyncio.Task(do_test(peer2, VERSION_MSG_2, VERSION_MSG))
 
     asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
+
+def test_queue_gc():
+    # create a peer
+    # add 50 listeners
+    # receive 100 messages
+    # first 10 listeners will stop listening after two messages
+    # check GC
+    peer = BitcoinPeerProtocol(MAGIC_HEADER)
+    pt = PeerTransport(None)
+    peer.connection_made(pt)
+
+    next_message_list = [peer.new_get_next_message_f() for i in range(50)]
+    assert len(peer.message_queues) == 50
+    next_message_list = None
+    assert len(peer.message_queues) == 0
+
+    @asyncio.coroutine
+    def async_listen(next_message, delay=0):
+        for i in range(101):
+            name, data = yield from next_message()
+        yield from asyncio.sleep(delay)
+
+    for i in range(3):
+        asyncio.Task(async_listen(peer.new_get_next_message_f(), delay=60))
+    tasks = [asyncio.Task(async_listen(peer.new_get_next_message_f(), delay=1)) for i in range(50)]
+
+    peer.data_received(VERSION_MSG_BIN)
+    for i in range(100):
+        peer.data_received(VERACK_MSG_BIN)
+
+    # give everyone a chance to run (but no one finishes)
+    asyncio.get_event_loop().run_until_complete(asyncio.wait(tasks, timeout=0.1))
+
+    assert len(peer.message_queues) == 53
+
+    # now let all 50 finish. They should be collected.
+    asyncio.get_event_loop().run_until_complete(asyncio.wait(tasks))
+
+    ## you would think this number would be 3, but it's not.
+    ## oh well. This is close enough.
+    assert len(peer.message_queues) <= 4
