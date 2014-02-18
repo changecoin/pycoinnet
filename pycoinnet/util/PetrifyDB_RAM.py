@@ -18,7 +18,7 @@ class PetrifyError(Exception):
 
 ZERO_HASH = b'\0' * 32
 
-class PetrifyDB(object):
+class PetrifyDB_RAM(object):
     def __init__(self, parent_to_0=ZERO_HASH):
         self.parent_to_0 = parent_to_0
         self.petrified_hashes = self._load_petrified_hashes()
@@ -27,8 +27,8 @@ class PetrifyDB(object):
     def _log(self):
         logging.debug("petrified chain is length %d", len(self.petrified_hashes))
         if len(self.petrified_hashes):
-            logging.debug("petrified chain starts with %s", b2h_rev(self.petrified_hashes[0]))
-            logging.debug("petrified chain ends with %s", b2h_rev(self.petrified_hashes[-1]))
+            logging.debug("petrified chain starts with %s", self.petrified_hashes[0])
+            logging.debug("petrified chain ends with %s", self.petrified_hashes[-1])
         if len(self.petrified_hashes_lookup) < len(self.petrified_hashes):
             logging.error("warning: petrified_hashes_lookup has %d members", len(self.petrified_hashes_lookup))
 

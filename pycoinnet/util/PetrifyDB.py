@@ -3,9 +3,9 @@ import os
 
 from pycoin.serialize import b2h_rev
 
-from .PetrifyDB_RAM import PetrifyDB
+from .PetrifyDB_RAM import PetrifyDB_RAM
 
-class PetrifyDB(PetrifyDB):
+class PetrifyDB(PetrifyDB_RAM):
     PETRIFIED_FN = "petrified.bin"
 
     def __init__(self, dir_path, *args, **kwargs):
