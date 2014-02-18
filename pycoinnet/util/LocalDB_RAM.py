@@ -1,18 +1,20 @@
 
 class LocalDB(object):
-    def __init__(self):
+    def __init__(self, hash_f):
+        super(LocalDB, self).__init__()
+        self.hash_f = hash_f
         self.lookup = {}
 
     def add_items(self, items):
         for item in items:
-            self.lookup[item.hash()] = item
+            self.lookup[self.hash_f(item)] = item
             self._store_item(item)
 
     def remove_items_with_hash(self, hashes):
         for h in hashes:
-            self._remove_item_with_hash(h)
             if h in self.lookup:
                 del self.lookup[h]
+            self._remove_item_with_hash(h)
 
     def hash_is_known(self, h):
         if h in self.lookup:
@@ -21,7 +23,9 @@ class LocalDB(object):
 
     def item_for_hash(self, h):
         if h not in self.lookup:
-            self._load_item_for_hash(h)
+            item = self._load_item_for_hash(h)
+            if item:
+                self.lookup[h] = item
         return self.lookup.get(h)
 
     # override the following
