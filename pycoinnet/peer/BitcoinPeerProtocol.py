@@ -27,7 +27,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.magic_header = magic_header
         self.peername = "(unconnected)"
         self.connection_was_lost = asyncio.Future()
-        self._request_handle = None
+        self._run_handle = None
         self.message_queues = weakref.WeakSet()
         ## stats
         self.bytes_read = 0
@@ -40,6 +40,8 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             while True:
                 try:
                     message_name, data = yield from self._parse_next_message()
+                except EOFError:
+                    message_name = None
                 except Exception:
                     logging.exception("error in _parse_next_message")
                     message_name = None
@@ -54,11 +56,9 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.message_queues.add(q)
         def get_next_message():
             msg_name, data = yield from q.get()
-            if msg_name == None:
-                raise self.connection_was_lost.exception()
             return msg_name, data
-        if not self._request_handle:
-            self._request_handle = asyncio.Task(run(self))
+        if not self._run_handle:
+            self._run_handle = asyncio.Task(run(self))
         return get_next_message
 
     def send_msg(self, message_name, **kwargs):
@@ -83,7 +83,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
 
     def connection_lost(self, exc):
         self.connection_was_lost.set_exception(exc)
-        self._request_handle.cancel()
+        self.reader.feed_eof()
 
     def data_received(self, data):
         self.bytes_read += len(data)
@@ -165,5 +165,5 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def stop(self):
         self.transport.close()
         ## is this necessary?
-        #self._request_handle.cancel()
+        #self._run_handle.cancel()
     '''

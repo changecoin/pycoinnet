@@ -208,3 +208,33 @@ def test_queue_gc():
     ## you would think this number would be 3, but it's not.
     ## oh well. This is close enough.
     assert len(peer.message_queues) <= 4
+
+def test_eof():
+    peer = BitcoinPeerProtocol(MAGIC_HEADER)
+    pt = PeerTransport(None)
+    peer.connection_made(pt)
+
+    COUNT = 0
+    @asyncio.coroutine
+    def async_listen(next_message):
+        count = 0
+        while True:
+            name, data = yield from next_message()
+            if name == None:
+                break
+            count += 1
+        assert count == 2
+        nonlocal COUNT
+        COUNT += 1
+
+    tasks = [asyncio.Task(async_listen(peer.new_get_next_message_f())) for i in range(50)]
+
+    peer.data_received(VERSION_MSG_BIN)
+    peer.data_received(VERACK_MSG_BIN)
+    # end of stream
+    peer.connection_lost(None)
+
+    # give everyone a chance to run (but no one finishes)
+    asyncio.get_event_loop().run_until_complete(asyncio.wait(tasks))
+
+    assert COUNT == 50
