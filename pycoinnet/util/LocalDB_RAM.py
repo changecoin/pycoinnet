@@ -1,6 +1,6 @@
 
 class LocalDB(object):
-    def __init__(self, hash_f):
+    def __init__(self, hash_f=lambda b: b.hash()):
         super(LocalDB, self).__init__()
         self.hash_f = hash_f
         self.lookup = {}

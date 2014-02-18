@@ -14,7 +14,7 @@ def h2b_rev(h):
 
 
 class LocalDB(LocalDB_RAM):
-    def __init__(self, hash_f, stream_f, parse_f, dir_path):
+    def __init__(self, hash_f=lambda b: b.hash(), stream_f=lambda b: b.stream, parse_f=BlockHeader.parse, dir_path=None):
         super(LocalDB, self).__init__(hash_f)
         self.stream_f = stream_f
         self.parse_f = parse_f
