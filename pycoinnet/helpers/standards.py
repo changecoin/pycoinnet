@@ -3,6 +3,7 @@ import os
 import struct
 import time
 
+from pycoinnet.PeerAddress import PeerAddress
 
 class BitcoinProtocolError(Exception):
     pass
