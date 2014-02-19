@@ -1,6 +1,9 @@
 
 # this provides the following API:
 
+# add_peer(peer, last_known_block)
+# get_block(block_hash, expected_index)
+
 # get_blocks(hash_list, expected_index)
 
 # it goes to the list of known peers who have the blocks in question
@@ -11,38 +14,27 @@
 import asyncio
 import logging
 import time
+import weakref
 
-from pycoinnet.InvItem import InvItem
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK
 
-ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
-
+from pycoinnet.peer.Fetcher import Fetcher
 
 class Blockfetcher:
     def __init__(self):
         self.block_hash_priority_queue = asyncio.PriorityQueue()
-        self.fetch_future_lookup = {}
+        self.fetch_future_lookup = weakref.WeakKeyDictionary()
 
-    def get_blocks(self, hash_list, expected_index):
-        r = []
-        for idx, the_hash in enumerate(hash_list):
-            future = asyncio.Future()
-            item = (idx + expected_index, the_hash, future)
-            self.block_hash_priority_queue.put_nowait(item)
-            r.append(future)
-        return r
+    def add_peer(self, peer, last_block_index):
+        self.fetch_future_lookup[peer] = asyncio.Task(self.fetch_from_peer(peer, last_block_index))
 
-    def get_block(self, block_hash, block_index):
+    def get_block_future(self, block_hash, block_index):
         future = asyncio.Future()
         item = (block_index, block_hash, future)
-        self.block_hash_priority_queue.put_nowait(item)
-        block = yield from asyncio.wait_for(future, timeout=None)
-        return block
-
-    def handle_connection_made(self, peer, transport):
-        self.fetch_future_lookup[peer] = asyncio.Task(self.fetch_from_peer(peer, peer.request_inv_item_future))
-
-    def handle_connection_lost(self, peer, exc):
-        self.fetch_future_lookup[peer].cancel()
+        self.block_hash_priority_queue.put_nowait((block_index, block_hash, future))
+        from pycoin.serialize import b2h_rev
+        logging.debug("putting %s into block_hash_priority_queue", b2h_rev(block_hash))
+        return future
 
     # for each peer, a loop:
     #   pull an item out of priority queue
@@ -55,9 +47,8 @@ class Blockfetcher:
     #     if less than X/3 seconds used, double N
 
     @asyncio.coroutine
-    def fetch_from_peer(self, peer, request_inv_item_future):
-        version_data = yield from asyncio.wait_for(peer.handshake_complete, timeout=None)
-        last_block_index = version_data["last_block_index"]
+    def fetch_from_peer(self, peer, last_block_index):
+        block_fetcher = Fetcher(peer, ITEM_TYPE_BLOCK)
         missing = set()
         per_loop = 1
         loop_timeout = 30
@@ -78,23 +69,19 @@ class Blockfetcher:
             for item in items_to_not_try:
                 self.block_hash_priority_queue.put_nowait(item)
             start_time = time.time()
-            def futures_for_item(item):
-                future = asyncio.Future()
-                request_inv_item_future(InvItem(ITEM_TYPE_BLOCK, item[1]), future)
-                return future
-            futures = [futures_for_item(item) for item in items_to_try]
+            futures = [block_fetcher.fetch_future(item[1]) for item in items_to_try]
             done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             finish_time = time.time() - start_time
             if len(pending) > 0:
                 per_loop = int(per_loop * 0.5 + 1)
-                logging.debug("we did not finish all of them (%f s), decreasing count per loop to %d", finish_time, per_loop)
+                logging.debug("time elapsed %f s but unfinished, decreasing count per loop to %d", finish_time, per_loop)
                 done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             else:
                 if finish_time * 3 < loop_timeout:
                     per_loop = min(500, int(0.8 + 1.4 * per_loop))
-                    logging.debug("we finished quickly (%f s), increasing count per loop to %d", finish_time, per_loop)
+                    logging.debug("time elapsed %f s, increasing count per loop to %d", finish_time, per_loop)
                 else:
-                    logging.debug("we finished in %f s, keeping count at %d", finish_time, per_loop)
+                    logging.debug("time elapsed %f s, keeping count at %d", finish_time, per_loop)
             for future, item in zip(futures, items_to_try):
                 if future.done():
                     item[-1].set_result(future.result())

@@ -1,11 +1,12 @@
 import binascii
 import logging
 import os
-import re
+import weakref
 
 from pycoin.block import BlockHeader
 from pycoin.serialize import b2h_rev
 from pycoinnet.util.ChainFinder import ChainFinder
+from pycoinnet.util.Queue import Queue
 
 
 """
@@ -42,6 +43,21 @@ def default_petrify_policy(unpetrified_chain_size, total_chain_size):
     """
     return max(0, unpetrified_chain_size - 10)
 
+def _update_q(q, ops):
+    # first, we meld out complimentary adds and removes
+    while len(ops) > 0:
+        op = ops[0]
+        if op[0] != 'remove':
+            break
+        last = q.pop()
+        if op[1:] != last[1:]:
+            q.put_nowait(last)
+            break
+        ops = ops[1:]
+    for op in ops:
+        q.put_nowait(op)
+
+
 class BlockChain(object):
     """
     This is a compound object that accepts blocks (or block headers) via add_items.
@@ -62,6 +78,12 @@ class BlockChain(object):
         self.petrify_policy = petrify_policy
         self.excluded_hashes = set()
         self._create_chain_finder()
+        self.change_queues = set() #weakref.WeakSet()
+
+    def new_change_q(self):
+        q = Queue()
+        self.change_queues.add(q)
+        return q
 
     def _create_chain_finder(self):
         self.chain_finder = ChainFinder()
@@ -182,6 +204,10 @@ class BlockChain(object):
         for idx, h in reversed(list(enumerate(new_path))):
             op = ("add", h, size-idx-1)
             ops.append(op)
+
+        for q in self.change_queues:
+            _update_q(q, ops)
+
         return ops
 
     def _petrify_blocks(self, to_petrify_count):
