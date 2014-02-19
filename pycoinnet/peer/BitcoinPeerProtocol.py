@@ -42,10 +42,10 @@ class BitcoinPeerProtocol(asyncio.Protocol):
                     message_name, data = yield from self._parse_next_message()
                 except EOFError:
                     logging.debug("end of stream %s", self)
-                    message_name = None
+                    message_name, data = None, None
                 except Exception:
                     logging.exception("error in _parse_next_message")
-                    message_name = None
+                    message_name, data = None, None
                 for q in self.message_queues:
                     if q.filter_f(message_name, data):
                         q.put_nowait((message_name, data))
