@@ -41,6 +41,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
                 try:
                     message_name, data = yield from self._parse_next_message()
                 except EOFError:
+                    logging.debug("end of stream %s", self)
                     message_name = None
                 except Exception:
                     logging.exception("error in _parse_next_message")
@@ -110,8 +111,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         reader = self.reader
         blob = yield from reader.readexactly(len(self.magic_header))
         if blob != self.magic_header:
-            s = "bad magic: got %s" % binascii.hexlify(blob)
-            raise BitcoinProtocolError(s)
+            raise BitcoinProtocolError("bad magic: got %s" % binascii.hexlify(blob))
 
         # read message name
         message_size_hash_bytes = yield from reader.readexactly(20)
@@ -131,10 +131,8 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         # check the hash
         actual_hash = encoding.double_sha256(message_data)[:4]
         if actual_hash != transmitted_hash:
-            s = "checksum is WRONG: %s instead of %s" % (
-                binascii.hexlify(actual_hash), binascii.hexlify(transmitted_hash))
-            raise BitcoinProtocolError(s)
-
+            raise BitcoinProtocolError("checksum is WRONG: %s instead of %s" % (
+                binascii.hexlify(actual_hash), binascii.hexlify(transmitted_hash)))
         logging.debug("message %s: %s (%d byte payload)", self, message_name, len(message_data))
 
         # parse the blob into a BitcoinProtocolMessage object
@@ -146,29 +144,3 @@ class BitcoinPeerProtocol(asyncio.Protocol):
 
     def __repr__(self):
         return "<Peer %s>" % str(self.peername)
-
-    '''
-    def default_msg_version_parameters(self):
-        remote_ip, remote_port = self.peername
-        remote_addr = PeerAddress(1, remote_ip, remote_port)
-        local_addr = PeerAddress(1, "127.0.0.1", 6111)
-        d = dict(
-            version=70001, subversion=b"/Notoshi/", services=1, timestamp=int(time.time()),
-            remote_address=remote_addr, local_address=local_addr,
-            nonce=struct.unpack("!Q", os.urandom(8))[0],
-            last_block_index=0, want_relay=True
-        )
-        return d
-
-    def update_msg_version_parameters(self, d):
-        """
-        Use this method to override any parameters included in the initial
-        version message (see messages.py). You obviously must call this before it's sent.
-        """
-        self.override_msg_version_parameters.update(d)
-
-    def stop(self):
-        self.transport.close()
-        ## is this necessary?
-        #self._run_handle.cancel()
-    '''

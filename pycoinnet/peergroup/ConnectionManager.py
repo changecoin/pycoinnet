@@ -3,7 +3,7 @@
 Keep track of all connected peers.
 """
 
-import asyncio.queues
+import asyncio
 import logging
 
 logging = logging.getLogger("ConnectionManager")
