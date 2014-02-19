@@ -42,12 +42,7 @@ VERSION_MSG_2 = dict(
 )
 
 
-def test_initial_handshake():
-    @asyncio.coroutine
-    def do_test(peer, vp1):
-        version_data = yield from standards.initial_handshake(peer, vp1)
-        return version_data
-
+def create_peers():
     peer1 = BitcoinPeerProtocol(MAGIC_HEADER)
     peer2 = BitcoinPeerProtocol(MAGIC_HEADER)
 
@@ -57,6 +52,16 @@ def test_initial_handshake():
     # connect them
     peer1.connection_made(pt1)
     peer2.connection_made(pt2)
+    return peer1, peer2
+
+
+def test_initial_handshake():
+    @asyncio.coroutine
+    def do_test(peer, vp1):
+        version_data = yield from standards.initial_handshake(peer, vp1)
+        return version_data
+
+    peer1, peer2 = create_peers()
 
     f1 = asyncio.Task(do_test(peer1, VERSION_MSG))
     f2 = asyncio.Task(do_test(peer2, VERSION_MSG_2))
@@ -65,3 +70,37 @@ def test_initial_handshake():
 
     assert f1.result() == VERSION_MSG_2
     assert f2.result() == VERSION_MSG
+
+def test_get_date_address_tuples():
+    peer1, peer2 = create_peers()
+
+    DA_TUPLES = [(1392770000+i, PeerAddress(1, "127.0.0.%d" % i, 8000+i)) for i in range(100)]
+
+    from pycoinnet.message import pack_from_data
+    msg_data = pack_from_data("addr", date_address_tuples=DA_TUPLES)
+
+    @asyncio.coroutine
+    def run_peer1():
+        yield from standards.initial_handshake(peer1, VERSION_MSG)
+        next_message = peer1.new_get_next_message_f()
+        name, data = yield from next_message()
+        peer1.send_msg("addr", date_address_tuples=DA_TUPLES)
+        return name, data
+
+    @asyncio.coroutine
+    def run_peer2():
+        yield from standards.initial_handshake(peer2, VERSION_MSG_2)
+        date_address_tuples = yield from standards.get_date_address_tuples(peer2)
+        return DA_TUPLES
+
+    f1 = asyncio.Task(run_peer1())
+    f2 = asyncio.Task(run_peer2())
+
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
+
+    name, data = f1.result()
+    assert name == 'getaddr'
+    assert data == {}
+
+    date_address_tuples = f2.result()
+    assert date_address_tuples == DA_TUPLES

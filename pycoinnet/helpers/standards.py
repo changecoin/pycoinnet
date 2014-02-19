@@ -69,12 +69,17 @@ def install_pong_manager(peer):
     def pong_task():
         next_message = peer.new_get_next_message_f(lambda name, data: name == 'ping')
         while True:
-            name, data = next_message()
+            name, data = yield from next_message()
             assert name == 'pong'
             peer.send_msg("pong", nonce=data["nonce"])
     asyncio.Task(pong_task())
 
-
+@asyncio.coroutine
+def get_date_address_tuples(peer):
+    next_message = peer.new_get_next_message_f() #lambda name, data: name == 'addr')
+    peer.send_msg("getaddr")
+    name, data = yield from next_message()
+    return data["date_address_tuples"]
 
 
 def create_inv_item_for_peer_f(peer):
