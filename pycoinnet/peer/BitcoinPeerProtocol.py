@@ -56,6 +56,8 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.message_queues.add(q)
         def get_next_message():
             msg_name, data = yield from q.get()
+            if msg_name == None:
+                raise EOFError
             return msg_name, data
         if not self._run_handle:
             self._run_handle = asyncio.Task(run(self))

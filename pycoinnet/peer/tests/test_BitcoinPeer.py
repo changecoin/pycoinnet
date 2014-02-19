@@ -160,8 +160,8 @@ def test_BitcoinPeerProtocol():
     pt2 = PeerTransport(peer1.data_received)
 
     # connect them
-    peer1.connection_made(pt2)
-    peer2.connection_made(pt1)
+    peer1.connection_made(pt1)
+    peer2.connection_made(pt2)
 
     f1 = asyncio.Task(do_test(peer1, VERSION_MSG, VERSION_MSG_2))
     f2 = asyncio.Task(do_test(peer2, VERSION_MSG_2, VERSION_MSG))
