@@ -59,7 +59,10 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             if msg_name == None:
                 raise EOFError
             return msg_name, data
-        if not self._run_handle:
+        if self._run_handle:
+            if self._run_handle.done():
+                q.put_nowait((None, None))
+        else:
             self._run_handle = asyncio.Task(run(self))
         return get_next_message
 

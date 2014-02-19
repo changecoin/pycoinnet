@@ -11,9 +11,11 @@ class PeerTransport(asyncio.Transport):
         super(PeerTransport, self).__init__(*args, **kwargs)
         self.write_f = write_f
         self.peer_name = peer_name
+        self.writ_data = bytearray()
 
     def write(self, data):
         self.write_f(data)
+        self.writ_data.extend(data)
 
     def close(self):
         pass
@@ -49,6 +51,9 @@ def create_peers():
     pt1 = PeerTransport(peer2.data_received, ("127.0.0.1", 8081))
     pt2 = PeerTransport(peer1.data_received, ("127.0.0.2", 8081))
 
+    peer1.writ_data = pt1.writ_data
+    peer2.writ_data = pt2.writ_data
+
     # connect them
     peer1.connection_made(pt1)
     peer2.connection_made(pt2)
@@ -56,20 +61,54 @@ def create_peers():
 
 
 def test_initial_handshake():
-    @asyncio.coroutine
-    def do_test(peer, vp1):
-        version_data = yield from standards.initial_handshake(peer, vp1)
-        return version_data
-
     peer1, peer2 = create_peers()
 
-    f1 = asyncio.Task(do_test(peer1, VERSION_MSG))
-    f2 = asyncio.Task(do_test(peer2, VERSION_MSG_2))
+    f1 = asyncio.Task(standards.initial_handshake(peer1, VERSION_MSG))
+    f2 = asyncio.Task(standards.initial_handshake(peer2, VERSION_MSG_2))
 
     asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
 
     assert f1.result() == VERSION_MSG_2
     assert f2.result() == VERSION_MSG
+
+
+def test_ping_pong():
+    peer1, peer2 = create_peers()
+
+    f1 = asyncio.Task(standards.initial_handshake(peer1, VERSION_MSG))
+    f2 = asyncio.Task(standards.initial_handshake(peer2, VERSION_MSG_2))
+
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
+
+    standards.install_ping_manager(peer1, heartbeat_rate=0.5, missing_pong_disconnect_timeout=110.1)
+    standards.install_pong_manager(peer2)
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.6))
+    assert peer1.writ_data[-26:] == peer2.writ_data[-26:]
+
+
+def test_missing_pong_disconnect():
+    peer1, peer2 = create_peers()
+
+    f1 = asyncio.Task(standards.initial_handshake(peer1, VERSION_MSG))
+    f2 = asyncio.Task(standards.initial_handshake(peer2, VERSION_MSG_2))
+
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
+
+    standards.install_ping_manager(peer1, heartbeat_rate=0.5, missing_pong_disconnect_timeout=0.01)
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.6))
+
+    next_message = peer1.new_get_next_message_f()
+
+    ## make sure peer1 is disconnected
+    got_eof = False
+    try:
+        asyncio.get_event_loop().run_until_complete(asyncio.wait(next_message(), timeout=0.2))
+    except EOFError:
+        got_eof = True
+    assert got_eof
+
 
 def test_get_date_address_tuples():
     peer1, peer2 = create_peers()
