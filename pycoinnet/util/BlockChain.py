@@ -146,6 +146,7 @@ class BlockChain(object):
                 self.local_db.add_items([item])
                 yield bh_to_node(item)
 
+        old_petrified_count = self.petrified_block_count()
         old_longest_chain = self.longest_local_block_chain()
         self.chain_finder.load_nodes(items_to_add(items))
         self._longest_chain_cache = None
@@ -165,12 +166,23 @@ class BlockChain(object):
 
         unpetrified_count = self.longest_local_block_chain_length()
         to_petrify_count = self.petrify_policy(
-            unpetrified_count, unpetrified_count + self.petrified_block_count())
+            unpetrified_count, unpetrified_count + old_petrified_count)
 
         if to_petrify_count > 0:
             self._petrify_blocks(to_petrify_count)
 
-        return new_path, old_path
+        # return a list of operations:
+        # ("add"/"remove", the_hash, the_index)
+        ops = []
+        size = len(old_longest_chain) + old_petrified_count
+        for idx, h in enumerate(old_path):
+            op = ("remove", h, size-idx-1)
+            ops.append(op)
+        size = len(new_longest_chain) + old_petrified_count
+        for idx, h in reversed(list(enumerate(new_path))):
+            op = ("add", h, size-idx-1)
+            ops.append(op)
+        return ops
 
     def _petrify_blocks(self, to_petrify_count):
         petrify_list = self.longest_local_block_chain()[-to_petrify_count:]
