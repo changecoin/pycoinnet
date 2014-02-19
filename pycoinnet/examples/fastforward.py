@@ -16,7 +16,7 @@ from pycoinnet.util.PetrifyDB_RAM import PetrifyDB_RAM as PetrifyDB
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 
-from pycoinnet.peergroup.FastForward import fast_forwarder_add_peer_f
+from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
 from pycoinnet.peergroup.ConnectionManager import ConnectionManager
 
 from pycoinnet.helpers.standards import default_msg_version_parameters
