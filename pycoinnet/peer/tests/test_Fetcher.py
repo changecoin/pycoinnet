@@ -83,8 +83,12 @@ def test_fetcher():
     from pycoinnet.message import pack_from_data
     msg_data = pack_from_data("tx", tx=TX_LIST[0])
 
-    msg_data = pack_from_data("getdata", items=[InvItem(1, TX_LIST[0].hash())])
-
+    item1 = [InvItem(1, TX_LIST[0].hash())]
+    item2 = [InvItem(1, TX_LIST[i].hash()) for i in range(2)]
+    msg_data = pack_from_data("getdata", items=item1)
+    msg_data = pack_from_data("getdata", items=item2)
+    msg_data = pack_from_data("notfound", items=item1)
+    msg_data = pack_from_data("notfound", items=item2)
 
     @asyncio.coroutine
     def run_peer1():
@@ -105,6 +109,13 @@ def test_fetcher():
         r.append(t)
         peer1.send_msg("tx", tx=TX_LIST[2])
 
+        t = yield from next_message()
+        r.append(t)
+        items = [InvItem(ITEM_TYPE_TX, TX_LIST[3].hash())]
+        items.append([InvItem(ITEM_TYPE_TX, TX_LIST[5].hash())])
+        peer1.send_msg("notfound", items=items)
+        peer1.send_msg("tx", tx=TX_LIST[4])
+
         return r
 
     @asyncio.coroutine
@@ -121,6 +132,16 @@ def test_fetcher():
 
         tx = yield from tx_fetcher.fetch(TX_LIST[2].hash())
         r.append(tx)
+
+        f1 = tx_fetcher.fetch_future(TX_LIST[3].hash())
+        f2 = tx_fetcher.fetch_future(TX_LIST[4].hash())
+        f3 = tx_fetcher.fetch_future(TX_LIST[5].hash())
+        yield from asyncio.wait([f1, f2, f3])
+
+        r.append(f1.result())
+        r.append(f2.result())
+        r.append(f3.result())
+
         return r
 
 
@@ -130,19 +151,17 @@ def test_fetcher():
     asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
 
     r = f1.result()
-    assert len(r) == 3
+    assert len(r) == 4
     assert r[0] == ('getdata', dict(items=(InvItem(ITEM_TYPE_TX, TX_LIST[0].hash()),)))
     assert r[1] == ('getdata', dict(items=(InvItem(ITEM_TYPE_TX, TX_LIST[1].hash()),)))
     assert r[2] == ('getdata', dict(items=(InvItem(ITEM_TYPE_TX, TX_LIST[2].hash()),)))
+    assert r[3] == ('getdata', dict(items=tuple(InvItem(ITEM_TYPE_TX, TX_LIST[i].hash()) for i in range(3,6))))
 
     r = f2.result()
-    assert len(r) == 3
+    assert len(r) == 6
     assert r[0].hash() == TX_LIST[0].hash()
     assert r[1] == None
     assert r[2].hash() == TX_LIST[2].hash()
-
-import logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format=('%(asctime)s [%(process)d] [%(levelname)s] '
-            '%(filename)s:%(lineno)d %(message)s'))
+    assert r[3] == None
+    assert r[4].hash() == TX_LIST[4].hash()
+    assert r[5] == None
