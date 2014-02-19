@@ -1,6 +1,5 @@
 import asyncio
 import os
-import struct
 import time
 
 from pycoinnet.PeerAddress import PeerAddress
@@ -10,14 +9,13 @@ class BitcoinProtocolError(Exception):
 
 
 def default_msg_version_parameters(peer):
-    import os, random, struct
     remote_ip, remote_port = peer.peername
     remote_addr = PeerAddress(1, remote_ip, remote_port)
     local_addr = PeerAddress(1, "127.0.0.1", 6111)
     d = dict(
         version=70001, subversion=b"/Notoshi/", services=1, timestamp=int(time.time()),
         remote_address=remote_addr, local_address=local_addr,
-        nonce=struct.unpack("!Q", os.urandom(8))[0],
+        nonce=int.from_bytes(os.urandom(8), byteorder="big"),
         last_block_index=0, want_relay=True
     )
     return d
@@ -30,7 +28,7 @@ def initial_handshake(peer, version_parameters):
     next_message = peer.new_get_next_message_f()
     peer.send_msg("version", **version_parameters)
 
-    message_name, version_data = yield from asyncio.wait_for(next_message(), timeout=None)
+    message_name, version_data = yield from next_message()
     if message_name != 'version':
         raise BitcoinProtocolError("missing version")
     peer.send_msg("verack")
@@ -52,7 +50,7 @@ def install_ping_manager(peer, heartbeat_rate=60, missing_pong_disconnect_timeou
                 pass
             # oh oh! no messages
             # send a ping
-            nonce = struct.unpack("!Q", os.urandom(8))[0]
+            nonce = int.from_bytes(os.urandom(8), byteorder="big")
             peer.send_msg("ping", nonce=nonce)
             end_time = time.time() + missing_pong_disconnect_timeout
             while True:
