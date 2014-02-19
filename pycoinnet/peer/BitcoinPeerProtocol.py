@@ -25,8 +25,9 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def __init__(self, magic_header, *args, **kwargs):
         super(BitcoinPeerProtocol, self).__init__(*args, **kwargs)
         self.magic_header = magic_header
-        self.peername = "(unconnected)"
-        self.connection_was_lost = asyncio.Future()
+        self.peername = ("(unconnected)", 0)
+        self.did_connection_made = asyncio.Future()
+        self.did_connection_lost = asyncio.Future()
         self._run_handle = None
         self.message_queues = weakref.WeakSet()
         ## stats
@@ -37,6 +38,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
     def new_get_next_message_f(self, filter_f=lambda message_name, data: True, maxsize=0):
         @asyncio.coroutine
         def run(self):
+            yield from asyncio.wait_for(self.did_connection_made, timeout=None)
             while True:
                 try:
                     message_name, data = yield from self._parse_next_message()
@@ -81,6 +83,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.transport.write(packet)
 
     def connection_made(self, transport):
+        self.did_connection_made.set_result(transport)
         self.transport = transport
         self.reader = asyncio.StreamReader()
         self._is_writable = True
@@ -88,7 +91,10 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.connect_start_time = time.time()
 
     def connection_lost(self, exc):
-        self.connection_was_lost.set_exception(exc)
+        if exc:
+            self.did_connection_lost.set_exception(exc)
+        else:
+            self.did_connection_lost.set_result(None)
         self.reader.feed_eof()
 
     def data_received(self, data):

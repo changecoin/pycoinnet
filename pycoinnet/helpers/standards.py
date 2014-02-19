@@ -84,3 +84,12 @@ def get_date_address_tuples(peer):
     peer.send_msg("getaddr")
     name, data = yield from next_message()
     return data["date_address_tuples"]
+
+@asyncio.coroutine
+def get_headers_hashes(peer, after_block_hash):
+    hashes = [after_block_hash]
+    peer.send_msg(message_name="getheaders", version=1, hashes=hashes, hash_stop=after_block_hash)
+    next_message = peer.new_get_next_message_f(lambda name, data: name == 'headers')
+    name, data = yield from next_message()
+    headers = [bh for bh, t in data["headers"]]
+    return headers

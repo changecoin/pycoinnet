@@ -3,7 +3,7 @@ import hashlib
 
 from pycoin.tx.Tx import Tx, TxIn, TxOut
 
-from pycoinnet.InvItem import InvItem
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX, ITEM_TYPE_BLOCK
 from pycoinnet.helpers import standards
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol, BitcoinProtocolError
 from pycoinnet.peer.Fetcher import Fetcher
@@ -63,8 +63,6 @@ def create_peers():
     peer1.connection_made(pt1)
     peer2.connection_made(pt2)
     return peer1, peer2
-
-ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
 def test_fetcher():
     peer1, peer2 = create_peers()
