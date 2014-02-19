@@ -218,11 +218,12 @@ def test_eof():
     @asyncio.coroutine
     def async_listen(next_message):
         count = 0
-        while True:
-            name, data = yield from next_message()
-            if name == None:
-                break
-            count += 1
+        try:
+            while True:
+                name, data = yield from next_message()
+                count += 1
+        except EOFError:
+            pass
         assert count == 2
         nonlocal COUNT
         COUNT += 1
