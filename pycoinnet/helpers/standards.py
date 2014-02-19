@@ -62,6 +62,7 @@ def install_ping_manager(peer, heartbeat_rate=60, missing_pong_disconnect_timeou
                         break
                 except asyncio.TimeoutError:
                     peer.connection_lost(None)
+                    logging.error("remote peer %s didn't answer ping, disconnecting", peer)
                     return
     next_message = peer.new_get_next_message_f()
     asyncio.Task(ping_task(next_message))
@@ -82,77 +83,3 @@ def get_date_address_tuples(peer):
     peer.send_msg("getaddr")
     name, data = yield from next_message()
     return data["date_address_tuples"]
-
-
-def create_inv_item_for_peer_f(peer):
-    def fetch_inv_item(inv_item):
-        pass
-    pass
-
-
-class InvItemHandler:
-    def __init__(self, peer):
-        self.inv_items_requested = Queue()
-        self.inv_item_futures = weakref.WeakValueDictionary()
-
-        peer.register_delegate(self)
-        self.peer = peer
-        peer.request_inv_item = self.request_inv_item
-        peer.request_inv_item_future = self.request_inv_item_future
-        asyncio.Task(self.getdata_sender())
-
-        next_message = peer.new_get_next_message_f(filter_f=lambda name, data: name in ["tx", "block", "notfound"])
-        asyncio.Task(self.fetchitems_loop(next_message))
-
-    def fetchitems_loop(self, next_message):
-        while True:
-            name, data = yield from next_message()
-            if name == "tx":
-                self.fulfill(ITEM_TYPE_TX, data["tx"])
-            if name == "block":
-                self.fulfill(ITEM_TYPE_BLOCK, data["block"])
-            if name == "notfound":
-                for inv_item in data["items"]:
-                    future = self.inv_item_futures.get(inv_item)
-                    if future:
-                        del self.inv_item_futures[inv_item]
-                        future.cancel()
-
-    def backlog(self):
-        return len(self.inv_item_futures) + self.inv_items_requested.size()
-
-    def fulfill(self, inv_item_type, item):
-        inv_item = InvItem(inv_item_type, item.hash())
-        future = self.inv_item_futures.get(inv_item)
-        if future:
-            del self.inv_item_futures[inv_item]
-            if not future.done():
-                future.set_result(item)
-            else:
-                logging.info("got %s unsolicited", item.id())
-
-    def request_inv_item(self, inv_item):
-        future = asyncio.Future()
-        self.request_inv_item_future(inv_item, future)
-        yield from asyncio.wait_for(future, timeout=None)
-        return future.result()
-
-    def request_inv_item_future(self, inv_item, future):
-        logging.debug("request inv item %s", inv_item)
-        self.inv_items_requested.put_nowait((inv_item, future))
-
-    @asyncio.coroutine
-    def getdata_sender(self):
-        while True:
-            pairs = yield from self.inv_items_requested.get_all()
-            so_far = []
-            for inv_item, future in pairs:
-                if future.cancelled():
-                    continue
-                so_far.append(inv_item)
-                self.inv_item_futures[inv_item] = future
-                if len(so_far) >= 50000:
-                    self.peer.send_msg("getdata", items=so_far)
-                    so_far = []
-            if len(so_far) > 0:
-                self.peer.send_msg("getdata", items=so_far)
