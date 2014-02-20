@@ -67,6 +67,7 @@ def main():
         level=logging.DEBUG,
         format=('%(asctime)s [%(process)d] [%(levelname)s] '
                 '%(filename)s:%(lineno)d %(message)s'))
+    logging.getLogger("asyncio").setLevel(logging.INFO)
     queue_of_timestamp_peeraddress_tuples = new_queue_of_timestamp_peeraddress_tuples()
     queue_of_timestamp_peeraddress_tuples.put_nowait((0, PeerAddress(1, "127.0.0.1", 28333)))
 
