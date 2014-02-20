@@ -74,14 +74,14 @@ class Blockfetcher:
             finish_time = time.time() - start_time
             if len(pending) > 0:
                 per_loop = int(per_loop * 0.5 + 1)
-                logging.debug("time elapsed %f s but unfinished, decreasing count per loop to %d", finish_time, per_loop)
+                logging.debug("time elapsed %f s but unfinished, decreasing count per loop to %d for %s", finish_time, per_loop, peer)
                 done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             else:
                 if finish_time * 3 < loop_timeout:
                     per_loop = min(500, int(0.8 + 1.4 * per_loop))
-                    logging.debug("time elapsed %f s, increasing count per loop to %d", finish_time, per_loop)
+                    logging.debug("time elapsed %f s, increasing count per loop to %d for %s", finish_time, per_loop, peer)
                 else:
-                    logging.debug("time elapsed %f s, keeping count at %d", finish_time, per_loop)
+                    logging.debug("time elapsed %f s, keeping count at %d for %s", finish_time, per_loop, peer)
             for future, item in zip(futures, items_to_try):
                 if future.done():
                     item[-1].set_result(future.result())

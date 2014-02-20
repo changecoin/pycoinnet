@@ -18,6 +18,9 @@ class PeerAddress(object):
     def __repr__(self):
         return "%s/%d" % (self.ip_address, self.port)
 
+    def host(self):
+        return self.ip_address.exploded
+
     def stream(self, f):
         f.write(struct.pack("<Q", self.services))
         ip_bin = self.ip_address.packed
@@ -33,6 +36,9 @@ class PeerAddress(object):
             ip_bin = ip_bin[len(IP4_HEADER):]
         ip_int = int.from_bytes(ip_bin, byteorder="big")
         return self(services, ip_int, port)
+
+    def __lt__(self, other):
+        return self.ip_address.packed < other.ip_address.packed
 
     def __eq__(self, other):
         return self.services == other.services and \

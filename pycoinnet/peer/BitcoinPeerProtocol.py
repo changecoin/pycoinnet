@@ -145,6 +145,9 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         data = parse_from_data(message_name, message_data)
         return message_name, data
 
+    def __lt__(self, other):
+        return self.connect_start_time < other.connect_start_time
+
     def __str__(self):
         return repr(self)
 

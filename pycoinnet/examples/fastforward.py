@@ -17,8 +17,8 @@ from pycoinnet.util.PetrifyDB_RAM import PetrifyDB_RAM as PetrifyDB
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 
 from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
-from pycoinnet.peergroup.ConnectionManager import ConnectionManager
 
+from pycoinnet.helpers.standards import manage_connection_count
 from pycoinnet.helpers.standards import default_msg_version_parameters
 from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.helpers.standards import install_ping_manager
@@ -39,7 +39,7 @@ def run_peer(peer, fast_forward_add_peer):
     fast_forward_add_peer(peer, last_block_index)
 
 def run():
-    ADDRESS_QUEUE = Queue(maxsize=20)
+    ADDRESS_QUEUE = queue_of_addresses()
     ADDRESS_QUEUE.put_nowait(("127.0.0.1", 28333))
 
     local_db = LocalDB()
@@ -54,8 +54,7 @@ def run():
         asyncio.Task(run_peer(peer, fast_forward_add_peer))
         return peer
 
-    cm = ConnectionManager(ADDRESS_QUEUE, create_protocol_callback)
-    cm.run()
+    connect_q = manage_connection_count(ADDRESS_QUEUE, create_protocol_callback)
 
 def main():
     asyncio.tasks._DEBUG = True

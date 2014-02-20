@@ -9,6 +9,8 @@ class BitcoinProtocolError(Exception):
     pass
 
 
+logging = logging.getLogger("standards")
+
 def manage_connection_count(address_queue, protocol_factory, connection_count=4):
     """
     address_queue: a queue of (host, port) tuples
@@ -17,19 +19,18 @@ def manage_connection_count(address_queue, protocol_factory, connection_count=4)
     """
     event_q = asyncio.Queue()
 
-    logging = logging.getLogger("connect")
-
     @asyncio.coroutine
     def run():
         while True:
-            host, port = yield from address_queue.get()
+            timestamp, peer_addr = yield from address_queue.get()
+            host, port = peer_addr.host(), peer_addr.port
             logging.info("connecting to %s:%d" % (host, port))
             try:
                 transport, protocol = yield from asyncio.get_event_loop().create_connection(
-                    peer_protocol_factory, host=host, port=port)
+                    protocol_factory, host=host, port=port)
                 logging.info("connected (tcp) to %s:%d", host, port)
                 event_q.put_nowait(("connect", (host, port)))
-                asyncio.wait_for(protocol.did_connection_lost, timeout=None)
+                yield from asyncio.wait_for(protocol.did_connection_lost, timeout=None)
                 event_q.put_nowait(("disconnect", (host, port)))
             except Exception:
                 logging.exception("failed to connect to %s:%d", host, port)
