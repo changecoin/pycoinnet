@@ -32,8 +32,6 @@ class Blockfetcher:
         future = asyncio.Future()
         item = (block_index, block_hash, future)
         self.block_hash_priority_queue.put_nowait((block_index, block_hash, future))
-        from pycoin.serialize import b2h_rev
-        logging.debug("putting %s into block_hash_priority_queue", b2h_rev(block_hash))
         return future
 
     # for each peer, a loop:
@@ -69,7 +67,20 @@ class Blockfetcher:
             for item in items_to_not_try:
                 self.block_hash_priority_queue.put_nowait(item)
             start_time = time.time()
-            futures = [block_fetcher.fetch_future(item[1]) for item in items_to_try]
+            futures = []
+            for item in items_to_try:
+                if item[-1].done():
+                    break
+                future = block_fetcher.fetch_future(item[1])
+                def make_cb(the_future):
+                    def cb(f):
+                        if not the_future.done():
+                            the_future.set_result(f.result())
+                    return cb
+                future.add_done_callback(make_cb(item[-1]))
+                futures.append(future)
+            if len(futures) == 0:
+                continue
             done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             finish_time = time.time() - start_time
             if len(pending) > 0:
@@ -78,13 +89,11 @@ class Blockfetcher:
                 done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             else:
                 if finish_time * 3 < loop_timeout:
-                    per_loop = min(500, int(0.8 + 1.4 * per_loop))
+                    per_loop = min(1000, int(0.8 + 1.4 * per_loop))
                     logging.debug("time elapsed %f s, increasing count per loop to %d for %s", finish_time, per_loop, peer)
                 else:
                     logging.debug("time elapsed %f s, keeping count at %d for %s", finish_time, per_loop, peer)
-            for future, item in zip(futures, items_to_try):
-                if future.done():
-                    item[-1].set_result(future.result())
-                else:
+            for item in items_to_try:
+                if not item[-1].done():
                     self.block_hash_priority_queue.put(item)
                     missing.add(item)
