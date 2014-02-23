@@ -1,6 +1,32 @@
 """
-GoodNeighbor.py
+TxCollector.py
 
+Listen to peers and queue when new InvItem objects are seen.
+
+Allow them to be fetched.
+
+Advertise objects that are fetched (to peers that haven't told us they have it).
+
+
+- queue of InvItem objects
+- fetch
+- advertise
+"""
+
+"""
+
+GoodNeighbor:
+
+- fetches from queue of new_inv_item objects
+- retrieves them (if not in mempool or disinterested)
+- upon retrival advertise
+
+- watch for "getdata", "mempool"
+
+"""
+
+
+"""
 This really has two parts:
 
 1) listen to peers getting new messages and fetching them
@@ -67,9 +93,9 @@ class TxCollector:
     def _watch_peer(self, peer, next_message):
         while True:
             name, data = yield from next_message()
-            if name is None:
-                break
+            logging.debug("_watch_peer got %s %s", name, data)
             for inv_item in data["items"]:
+                logging.debug("noting %s available from %s", inv_item, peer)
                 self._register_inv_item(inv_item, peer)
 
         del self.fetchers_by_peer[peer]
@@ -95,28 +121,40 @@ class TxCollector:
         # don't act on disinterested hashes
         if inv_item in self.disinterested_inv_item_set:
             return
-        if inv_item not in self.inv_item_db:
+        if inv_item.data not in self.inv_item_db:
             # it's new!
-            self.inv_item_db[inv_item] = weakref.WeakSet()
-            self.inv_item_db[inv_item].add(peer)
+            self.inv_item_db[inv_item.data] = weakref.WeakSet()
+            self.inv_item_db[inv_item.data].add(peer)
             asyncio.Task(self._fetch_inv_item(inv_item))
-        self.inv_item_db[inv_item].add(peer)
+        else:
+            logging.debug("task fetching %s in progress, adding peer %s", inv_item, peer)
+            #import pdb; pdb.set_trace()
+        self.inv_item_db[inv_item.data].add(peer)
 
     @asyncio.coroutine
     def _fetch_inv_item(self, inv_item):
+        logging.debug("launched task to fetch %s", inv_item)
         while True:
-            the_set = self.inv_item_db[inv_item]
+            the_set = self.inv_item_db[inv_item.data]
             if len(the_set) == 0:
-                logging.error("couldn't find a place to fetch %s from", inv_item)
-                del self.inv_item_db[inv_item]
+                logging.error("couldn't find a place from which to fetch %s", inv_item)
+                del self.inv_item_db[inv_item.data]
                 return
             peer = the_set.pop()
-            the_set.add(peer)
-            fetcher = self.fetchers_by_peer[peer]
-            tx = yield from fetcher.fetch(inv_item.data, timeout=self.peer_timeout)
-            if tx:
-                break
-            the_set.discard(peer)
+            logging.debug("trying to fetch %s from %s, timeout %s", inv_item, peer, self.peer_timeout)
+            fetcher = self.fetchers_by_peer.get(peer)
+            if not fetcher:
+                logging.debug("no fetcher for %s", peer)
+                continue
+            try:
+                tx = yield from fetcher.fetch(inv_item.data, timeout=self.peer_timeout)
+                if tx:
+                    break
+                logging.debug("failed to fetch %s from %s", inv_item, peer)
+            except Exception:
+                import pdb; pdb.set_trace()
+                pass
         # we have the item
-        del self.inv_item_db[inv_item]
+        logging.debug("fetched Tx %s from %s", tx.id(), peer)
+        del self.inv_item_db[inv_item.data]
         self.tx_queue.put_nowait(tx)

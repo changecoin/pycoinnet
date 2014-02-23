@@ -120,6 +120,79 @@ def test_TxCollector_notfound():
     assert [tx.hash() for tx in r] == [tx.hash() for tx in TX_LIST[5:]]
 
 
+def test_TxCollector_retry():
+    # create some peers
+    peer1_2, peer2 = create_handshaked_peers()
+    peer1_3, peer3 = create_handshaked_peers()
+
+    TX_LIST = [make_tx(i) for i in range(10)]
+
+    @asyncio.coroutine
+    def run_peer_2(peer, txs):
+        # this peer will immediately advertise the ten transactions
+        # But when they are requested, it will only send one,
+        # and "notfound" eight.
+        yield from asyncio.sleep(0.4)
+        tx_db = dict((tx.hash(), tx) for tx in txs[:1])
+        r = []
+
+        inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in txs]
+        peer.send_msg("inv", items=inv_items)
+
+        next_message = peer.new_get_next_message_f()
+        t = yield from next_message()
+        r.append(t)
+        if t[0] == 'getdata':
+            peer.send_msg("tx", tx=txs[0])
+            peer.send_msg("tx", tx=txs[1])
+            peer.send_msg("tx", tx=txs[2])
+            peer.send_msg("notfound", items=t[1]["items"][3:-3])
+        return r
+
+    @asyncio.coroutine
+    def run_peer_3(peer, txs):
+        # this peer will wait a second, then advertise the ten transactions.
+
+        yield from asyncio.sleep(1.0)
+
+        tx_db = dict((tx.hash(), tx) for tx in txs)
+        r = []
+
+        inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in txs]
+        peer.send_msg("inv", items=inv_items)
+        #import pdb; pdb.set_trace()
+
+        while True:
+            next_message = peer.new_get_next_message_f()
+            t = yield from next_message()
+            r.append(t)
+            if t[0] == 'getdata':
+                for inv_item in t[1]["items"]:
+                    peer.send_msg("tx", tx=tx_db[inv_item.data])
+        return r
+
+    @asyncio.coroutine
+    def run_local_peer(peer_list):
+        tx_collector = TxCollector(3.0)
+        for peer in peer_list:
+            tx_collector.add_peer(peer)
+        r = []
+        while len(r) < 10:
+            v = yield from tx_collector.tx_queue.get()
+            r.append(v)
+        return r
+
+    f2 = asyncio.Task(run_peer_2(peer2, TX_LIST))
+    f3 = asyncio.Task(run_peer_3(peer3, TX_LIST))
+
+    f = asyncio.Task(run_local_peer([peer1_2, peer1_3]))
+    done, pending = asyncio.get_event_loop().run_until_complete(asyncio.wait([f], timeout=7.5))
+    assert len(done) == 1
+    r = done.pop().result()
+    import pdb; pdb.set_trace()
+    assert len(r) == 10
+    assert set(tx.hash() for tx in r) == set(tx.hash() for tx in TX_LIST)
+
 
 import logging
 asyncio.tasks._DEBUG = True
