@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import weakref
 
 from pycoinnet.InvItem import InvItem
