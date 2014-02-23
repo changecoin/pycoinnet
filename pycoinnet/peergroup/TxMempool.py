@@ -21,11 +21,11 @@ import logging
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX, ITEM_TYPE_BLOCK
 
 class TxMempool:
-    def __init__(self, inv_collector):
+    def __init__(self, inv_collector, is_interested_f=lambda inv_item: inv_item.item_type == ITEM_TYPE_TX):
         self.inv_collector = inv_collector
         self.q = inv_collector.new_inv_item_queue()
         self.pool = {}
-        self.disinterested_items = set()
+        self.is_interested_f = is_interested_f
         asyncio.Task(self._run())
 
     def add_peer(self, peer):
@@ -66,12 +66,9 @@ class TxMempool:
 
     def add_tx(self, tx):
         inv_item = InvItem(ITEM_TYPE_TX, tx.hash())
-        if inv_item not in self.pool and inv_item not in self.disinterested_items:
+        if inv_item not in self.pool:
             self.pool[inv_item] = tx
             self.inv_collector.advertise_item(inv_item)
-
-    def add_disinterested_item(self, inv_item):
-        self.disinterested_items.add(inv_item)
 
     @asyncio.coroutine
     def _run(self):
@@ -83,6 +80,5 @@ class TxMempool:
 
         while True:
             inv_item = yield from self.q.get()
-            if inv_item in self.disinterested_items:
-                continue
-            asyncio.Task(fetch_item(inv_item))
+            if self.is_interested_f(inv_item):
+                asyncio.Task(fetch_item(inv_item))
