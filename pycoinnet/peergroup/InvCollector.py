@@ -85,6 +85,7 @@ class InvCollector:
                 continue
             item = yield from fetcher.fetch(inv_item.data, timeout=peer_timeout)
             if item:
+                logging.debug("got %s", item)
                 return item
 
     def advertise_item(self, inv_item):
@@ -92,7 +93,6 @@ class InvCollector:
             q.put_nowait(inv_item)
 
     def _register_inv_item(self, inv_item, peer):
-        logging.debug("%s from %s", inv_item, peer)
         the_hash = inv_item.data
         if the_hash not in self.inv_item_db:
             # it's new!

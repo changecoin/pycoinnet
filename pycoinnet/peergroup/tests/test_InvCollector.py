@@ -108,7 +108,7 @@ def test_InvCollector():
     assert [tx.hash() for tx in r] == [tx.hash() for tx in TX_LIST[:90]]
 
 
-def ztest_TxCollector_notfound():
+def test_TxCollector_notfound():
     peer1_2, peer2 = create_handshaked_peers()
 
     TX_LIST = [make_tx(i) for i in range(10)]
@@ -121,40 +121,42 @@ def ztest_TxCollector_notfound():
         # then send it when requested.
         next_message = peer.new_get_next_message_f()
 
-        tx_db = dict((tx.hash(), tx) for tx in txs)
+        tx_db = dict((tx.hash(), tx) for tx in txs[5:])
         r = []
 
-        inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in txs[:5]]
-        peer.send_msg("inv", items=inv_items)
-
-        t = yield from next_message()
-        r.append(t)
-        if t[0] == 'getdata':
-            peer.send_msg("notfound", items=t[1]["items"])
-
-        yield from asyncio.sleep(0.25)
-
-        inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in txs[5:]]
+        inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in txs]
         peer.send_msg("inv", items=inv_items)
 
         while 1:
             t = yield from next_message()
             r.append(t)
             if t[0] == 'getdata':
+                found = []
+                not_found = []
                 for inv_item in t[1]["items"]:
-                    peer.send_msg("tx", tx=tx_db[inv_item.data])
+                    if inv_item.data in tx_db:
+                        found.append(tx_db[inv_item.data])
+                    else:
+                        not_found.append(inv_item)
+                    if not_found:
+                        peer.send_msg("notfound", items=not_found)
+                    for tx in found:
+                        peer.send_msg("tx", tx=tx)
 
         return r
 
     @asyncio.coroutine
     def run_local_peer(peer_list):
-        tx_collector = TxCollector(1.2)
+        inv_collector = InvCollector()
         for peer in peer_list:
-            tx_collector.add_peer(peer)
+            inv_collector.add_peer(peer)
         r = []
         while len(r) < 5:
-            v = yield from tx_collector.tx_queue.get()
-            r.append(v)
+            yield from asyncio.sleep(0.1)
+            inv_item = yield from inv_collector.new_inv_item_queue.get()
+            v = yield from inv_collector.fetch(inv_item)
+            if v:
+                r.append(v)
         return r
 
     f2 = asyncio.Task(run_peer_2(peer2, TX_LIST))
@@ -166,7 +168,7 @@ def ztest_TxCollector_notfound():
     assert [tx.hash() for tx in r] == [tx.hash() for tx in TX_LIST[5:]]
 
 
-def ztest_TxCollector_retry():
+def test_TxCollector_retry():
     # create some peers
     peer1_2, peer2 = create_handshaked_peers()
     peer1_3, peer3 = create_handshaked_peers()
@@ -174,67 +176,57 @@ def ztest_TxCollector_retry():
     TX_LIST = [make_tx(i) for i in range(10)]
 
     @asyncio.coroutine
-    def run_peer_2(peer, txs):
+    def run_remote_peer(peer, txs, in_db_count, delay):
         # this peer will immediately advertise the ten transactions
         # But when they are requested, it will only send one,
         # and "notfound" eight.
-        yield from asyncio.sleep(0.4)
-        tx_db = dict((tx.hash(), tx) for tx in txs[:1])
+        yield from asyncio.sleep(delay)
+        tx_db = dict((tx.hash(), tx) for tx in txs[:in_db_count])
         r = []
 
         inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in txs]
         peer.send_msg("inv", items=inv_items)
 
         next_message = peer.new_get_next_message_f()
-        t = yield from next_message()
-        r.append(t)
-        if t[0] == 'getdata':
-            peer.send_msg("tx", tx=txs[0])
-            peer.send_msg("tx", tx=txs[1])
-            peer.send_msg("tx", tx=txs[2])
-            peer.send_msg("notfound", items=t[1]["items"][3:-3])
-        return r
-
-    @asyncio.coroutine
-    def run_peer_3(peer, txs):
-        # this peer will wait a second, then advertise the ten transactions.
-
-        yield from asyncio.sleep(1.0)
-
-        tx_db = dict((tx.hash(), tx) for tx in txs)
-        r = []
-
-        inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in txs]
-        peer.send_msg("inv", items=inv_items)
 
         while True:
-            next_message = peer.new_get_next_message_f()
             t = yield from next_message()
             r.append(t)
             if t[0] == 'getdata':
+                found = []
+                not_found = []
+                yield from asyncio.sleep(0.1)
                 for inv_item in t[1]["items"]:
-                    peer.send_msg("tx", tx=tx_db[inv_item.data])
+                    if inv_item.data in tx_db:
+                        found.append(tx_db[inv_item.data])
+                    else:
+                        not_found.append(inv_item)
+                    if not_found:
+                        peer.send_msg("notfound", items=not_found)
+                    for tx in found:
+                        peer.send_msg("tx", tx=tx)
         return r
 
     @asyncio.coroutine
     def run_local_peer(peer_list):
-        tx_collector = TxCollector(3.0)
+        inv_collector = InvCollector()
         for peer in peer_list:
-            tx_collector.add_peer(peer)
+            inv_collector.add_peer(peer)
         r = []
         while len(r) < 10:
-            v = yield from tx_collector.tx_queue.get()
-            r.append(v)
+            inv_item = yield from inv_collector.new_inv_item_queue.get()
+            v = yield from inv_collector.fetch(inv_item)
+            if v:
+                r.append(v)
         return r
 
-    f2 = asyncio.Task(run_peer_2(peer2, TX_LIST))
-    f3 = asyncio.Task(run_peer_3(peer3, TX_LIST))
+    f2 = asyncio.Task(run_remote_peer(peer2, TX_LIST, 1, 0.4))
+    f3 = asyncio.Task(run_remote_peer(peer3, TX_LIST, 10, 1.0))
 
     f = asyncio.Task(run_local_peer([peer1_2, peer1_3]))
     done, pending = asyncio.get_event_loop().run_until_complete(asyncio.wait([f], timeout=7.5))
     assert len(done) == 1
     r = done.pop().result()
-    import pdb; pdb.set_trace()
     assert len(r) == 10
     assert set(tx.hash() for tx in r) == set(tx.hash() for tx in TX_LIST)
 
