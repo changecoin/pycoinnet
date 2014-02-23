@@ -22,7 +22,7 @@ class Fetcher:
         future = self.fetch_future(the_hash)
         try:
             return (yield from asyncio.wait_for(future, timeout=timeout))
-        except asyncio.Timeout:
+        except asyncio.TimeoutError:
             return None
 
     def fetch_future(self, the_hash):

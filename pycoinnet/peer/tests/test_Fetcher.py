@@ -11,6 +11,10 @@ from pycoinnet.PeerAddress import PeerAddress
 
 from pycoinnet.peer.tests.helper import PeerTransport, MAGIC_HEADER, VERSION_MSG_BIN, VERSION_MSG, VERSION_MSG, VERSION_MSG_2, VERACK_MSG_BIN, create_peers, make_hash, make_tx
 
+def create_handshaked_peers():
+    peer1, peer2 = create_peers()
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([initial_handshake(peer1, VERSION_MSG), initial_handshake(peer2, VERSION_MSG_2)]))
+    return peer1, peer2
 
 def test_fetcher():
     peer1, peer2 = create_peers()
@@ -102,3 +106,40 @@ def test_fetcher():
     assert r[3] == None
     assert r[4].hash() == TX_LIST[4].hash()
     assert r[5] == None
+
+
+def test_fetcher_timeout():
+    peer1, peer2 = create_peers()
+
+    TX_LIST = [make_tx(i) for i in range(100)]
+
+    @asyncio.coroutine
+    def run_peer1():
+        r = []
+        yield from standards.initial_handshake(peer1, VERSION_MSG)
+        next_message = peer1.new_get_next_message_f()
+        t = yield from next_message()
+        r.append(t)
+        return r
+
+    @asyncio.coroutine
+    def run_peer2():
+        r = []
+        yield from standards.initial_handshake(peer2, VERSION_MSG_2)
+        tx_fetcher = Fetcher(peer2, ITEM_TYPE_TX)
+        tx = yield from tx_fetcher.fetch(TX_LIST[0].hash(), timeout=2)
+        r.append(tx)
+        return r
+
+    f1 = asyncio.Task(run_peer1())
+    f2 = asyncio.Task(run_peer2())
+
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
+
+    r = f1.result()
+    assert len(r) == 1
+    assert r[0] == ('getdata', dict(items=(InvItem(ITEM_TYPE_TX, TX_LIST[0].hash()),)))
+
+    r = f2.result()
+    assert len(r) == 1
+    assert r[0] == None
