@@ -1,20 +1,3 @@
-
-"""
-  - add_tx
-    - advertise
-  - add_block
-    - advertise
-  - monitor InvCollector
-    - fetch
-    - policy (filter InvItem objects)
-
-TODO:
-  - deal with block additions and un-additions removing and adding Txs
-  - eventually kill Tx
-  - add disinterested Tx hashes
-
-"""
-
 import asyncio
 import logging
 
@@ -29,6 +12,10 @@ class TxMempool:
         asyncio.Task(self._run())
 
     def add_peer(self, peer):
+        """
+        Call this method when a peer comes online and you want to keep its mempool
+        in sync with this mempool.
+        """
         @asyncio.coroutine
         def _run_mempool(next_message):
             try:
@@ -65,6 +52,10 @@ class TxMempool:
         asyncio.Task(_run_getdata(peer.new_get_next_message_f(lambda name, data: name == 'getdata')))
 
     def add_tx(self, tx):
+        """
+        Add a transaction to the mempool and advertise it to peers so it can
+        propogate throughout the network.
+        """
         inv_item = InvItem(ITEM_TYPE_TX, tx.hash())
         if inv_item not in self.pool:
             self.pool[inv_item] = tx

@@ -6,10 +6,6 @@ Listen to peers and queue when new InvItem objects are seen.
 Allow them to be fetched.
 
 Advertise objects that are fetched (to peers that haven't told us they have it).
-
-- queue of InvItem objects
-- fetch
-- advertise
 """
 
 import asyncio
@@ -19,11 +15,9 @@ import weakref
 
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX, ITEM_TYPE_BLOCK
 from pycoinnet.peer.Fetcher import Fetcher
-from pycoinnet.util.Queue import Queue
 
 
 class InvCollector:
-
     def __init__(self):
         self.inv_item_db = {}
         # key: InvItem; value: weakref.WeakSet of peers
@@ -33,8 +27,11 @@ class InvCollector:
         self.inv_item_queues = weakref.WeakSet()
 
     def add_peer(self, peer):
+        """
+        Add a peer whose inv messages we want to monitor.
+        """
         self.fetchers_by_peer[peer] = Fetcher(peer, ITEM_TYPE_TX)
-        q = Queue()
+        q = asyncio.Queue()
         self.advertise_queues.add(q)
 
         @asyncio.coroutine
@@ -69,12 +66,21 @@ class InvCollector:
         asyncio.Task(_watch_peer(peer, next_message, advertise_task))
 
     def new_inv_item_queue(self):
-        q = Queue()
+        """
+        Return a new queue that gets inv_items queued to it the first time
+        they are seen. Invoke "fetch" to get them.
+        """
+        q = asyncio.Queue()
         self.inv_item_queues.add(q)
         return q
 
     @asyncio.coroutine
     def fetch(self, inv_item, peer_timeout=10):
+        """
+        Fetch an inv_item by trying to fetch it from peers. After peer_timeout
+        seconds, give up and try another peer. Returns None if the request could
+        not be fulfilled.
+        """
         logging.debug("launched task to fetch %s", inv_item)
         while True:
             the_dict = self.inv_item_db[inv_item.data]
@@ -94,6 +100,10 @@ class InvCollector:
                 return item
 
     def advertise_item(self, inv_item):
+        """
+        Advertise an item to peers. Note that peers who have mentioned they have
+        the item won't be advertised to.
+        """
         for q in self.advertise_queues:
             q.put_nowait(inv_item)
 
