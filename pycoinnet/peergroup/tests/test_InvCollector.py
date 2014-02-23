@@ -1,16 +1,9 @@
 import asyncio
 
-from pycoinnet.peer.tests.helper import PeerTransport, MAGIC_HEADER, VERSION_MSG_BIN, VERSION_MSG, VERSION_MSG_2, VERACK_MSG_BIN, create_peers, make_hash, make_tx
+from pycoinnet.peer.tests.helper import create_handshaked_peers, make_tx
 from pycoinnet.peergroup.InvCollector import InvCollector
-from pycoinnet.helpers.standards import initial_handshake
 
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX, ITEM_TYPE_BLOCK
-
-
-def create_handshaked_peers():
-    peer1, peer2 = create_peers()
-    asyncio.get_event_loop().run_until_complete(asyncio.wait([initial_handshake(peer1, VERSION_MSG), initial_handshake(peer2, VERSION_MSG_2)]))
-    return peer1, peer2
 
 def test_InvCollector_simple():
     # create some peers
@@ -26,8 +19,9 @@ def test_InvCollector_simple():
         for peer in peer_list:
             inv_collector.add_peer(peer)
         r = []
+        inv_item_q = inv_collector.new_inv_item_queue()
         while len(r) < 10:
-            inv_item = yield from inv_collector.new_inv_item_queue.get()
+            inv_item = yield from inv_item_q.get()
             v = yield from inv_collector.fetch(inv_item)
             r.append(v)
         return r
@@ -73,8 +67,9 @@ def test_InvCollector():
         for peer in peer_list:
             inv_collector.add_peer(peer)
         r = []
+        inv_item_q = inv_collector.new_inv_item_queue()
         while len(r) < 90:
-            inv_item = yield from inv_collector.new_inv_item_queue.get()
+            inv_item = yield from inv_item_q.get()
             v = yield from inv_collector.fetch(inv_item)
             r.append(v)
         return r
@@ -151,9 +146,10 @@ def test_TxCollector_notfound():
         for peer in peer_list:
             inv_collector.add_peer(peer)
         r = []
+        inv_item_q = inv_collector.new_inv_item_queue()
         while len(r) < 5:
             yield from asyncio.sleep(0.1)
-            inv_item = yield from inv_collector.new_inv_item_queue.get()
+            inv_item = yield from inv_item_q.get()
             v = yield from inv_collector.fetch(inv_item)
             if v:
                 r.append(v)
@@ -213,8 +209,9 @@ def test_TxCollector_retry():
         for peer in peer_list:
             inv_collector.add_peer(peer)
         r = []
+        inv_item_q = inv_collector.new_inv_item_queue()
         while len(r) < 10:
-            inv_item = yield from inv_collector.new_inv_item_queue.get()
+            inv_item = yield from inv_item_q.get()
             v = yield from inv_collector.fetch(inv_item)
             if v:
                 r.append(v)

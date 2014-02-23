@@ -15,6 +15,7 @@ Advertise objects that are fetched (to peers that haven't told us they have it).
 import asyncio
 import logging
 import time
+import weakref
 
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX, ITEM_TYPE_BLOCK
 from pycoinnet.peer.Fetcher import Fetcher
@@ -28,23 +29,23 @@ class InvCollector:
         # key: InvItem; value: weakref.WeakSet of peers
 
         self.fetchers_by_peer = {}
-        self.advertise_q_for_peer = {}
-
-        self.new_inv_item_queue = Queue()
+        self.advertise_queues = weakref.WeakSet()
+        self.inv_item_queues = weakref.WeakSet()
 
     def add_peer(self, peer):
         self.fetchers_by_peer[peer] = Fetcher(peer, ITEM_TYPE_TX)
-        self.advertise_q_for_peer[peer] = Queue()
+        q = Queue()
+        self.advertise_queues.add(q)
 
         @asyncio.coroutine
-        def _advertise_to_peer(peer):
+        def _advertise_to_peer(peer, q):
             while True:
                 items = []
                 while True:
-                    inv_item = yield from self.advertise_q_for_peer[peer]
-                    if peer not in self.inv_item_db[inv_item]:
-                        items.add(inv_item)
-                    if self.advertise_q_for_peer.qsize() == 0:
+                    inv_item = yield from q.get()
+                    if peer not in self.inv_item_db.get(inv_item.data, []):
+                        items.append(inv_item)
+                    if q.qsize() == 0:
                         break
                 # advertise the presence of the item!
                 if len(items) > 0:
@@ -55,7 +56,6 @@ class InvCollector:
             try:
                 while True:
                     name, data = yield from next_message()
-                    logging.debug("_watch_peer got %s %s", name, data)
                     for inv_item in data["items"]:
                         logging.debug("noting %s available from %s", inv_item, peer)
                         self._register_inv_item(inv_item, peer)
@@ -63,10 +63,15 @@ class InvCollector:
                 del self.fetchers_by_peer[peer]
                 advertise_task.cancel()
 
-        advertise_task = asyncio.Task(_advertise_to_peer(peer))
+        advertise_task = asyncio.Task(_advertise_to_peer(peer, q))
 
         next_message = peer.new_get_next_message_f(lambda name, data: name == "inv")
         asyncio.Task(_watch_peer(peer, next_message, advertise_task))
+
+    def new_inv_item_queue(self):
+        q = Queue()
+        self.inv_item_queues.add(q)
+        return q
 
     @asyncio.coroutine
     def fetch(self, inv_item, peer_timeout=10):
@@ -81,7 +86,7 @@ class InvCollector:
             logging.debug("trying to fetch %s from %s, timeout %s", inv_item, peer, peer_timeout)
             fetcher = self.fetchers_by_peer.get(peer)
             if not fetcher:
-                logging.debug("no fetcher for %s", peer)
+                logging.error("no fetcher for %s", peer)
                 continue
             item = yield from fetcher.fetch(inv_item.data, timeout=peer_timeout)
             if item:
@@ -89,7 +94,7 @@ class InvCollector:
                 return item
 
     def advertise_item(self, inv_item):
-        for q in self.advertise_q_for_peer.values():
+        for q in self.advertise_queues:
             q.put_nowait(inv_item)
 
     def _register_inv_item(self, inv_item, peer):
@@ -97,5 +102,6 @@ class InvCollector:
         if the_hash not in self.inv_item_db:
             # it's new!
             self.inv_item_db[the_hash] = {}
-            self.new_inv_item_queue.put_nowait(inv_item)
+            for q in self.inv_item_queues:
+                q.put_nowait(inv_item)
         self.inv_item_db[the_hash][peer] = time.time()

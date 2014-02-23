@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
+from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.PeerAddress import PeerAddress
 
 from pycoin.tx.Tx import Tx, TxIn, TxOut
@@ -49,14 +50,12 @@ VERSION_MSG_2 = dict(
     last_block_index=0
 )
 
-
-
-def create_peers():
+def create_peers(ip1="127.0.0.1", ip2="127.0.0.2"):
     peer1 = BitcoinPeerProtocol(MAGIC_HEADER)
     peer2 = BitcoinPeerProtocol(MAGIC_HEADER)
 
-    pt1 = PeerTransport(peer2.data_received, ("127.0.0.1", 8081))
-    pt2 = PeerTransport(peer1.data_received, ("127.0.0.2", 8081))
+    pt1 = PeerTransport(peer2.data_received, (ip2, 6111))
+    pt2 = PeerTransport(peer1.data_received, (ip1, 6111))
 
     peer1.writ_data = pt1.writ_data
     peer2.writ_data = pt2.writ_data
@@ -64,6 +63,17 @@ def create_peers():
     # connect them
     peer1.connection_made(pt1)
     peer2.connection_made(pt2)
+    return peer1, peer2
+
+def create_handshaked_peers(ip1="127.0.0.1", ip2="127.0.0.2"):
+    peer1, peer2 = create_peers(ip1, ip2)
+    pa1 = PeerAddress(1, ip1, 6111)
+    pa2 = PeerAddress(1, ip2, 6111)
+    msg1 = dict(VERSION_MSG)
+    msg1.update(dict(local_address=pa1, remote_address=pa2))
+    msg2 = dict(VERSION_MSG)
+    msg2.update(dict(local_address=pa2, remote_address=pa1))
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([initial_handshake(peer1, msg1), initial_handshake(peer2, msg2)]))
     return peer1, peer2
 
 def make_hash(i):
