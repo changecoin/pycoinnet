@@ -17,7 +17,6 @@ def fast_forwarder_add_peer_f(blockchain):
     as reported in the initial handshake.
     """
     peer_queue = PriorityQueue()
-    block_change_queues = weakref.WeakSet()
 
     @asyncio.coroutine
     def _fetch_missing(peer, blockchain):
