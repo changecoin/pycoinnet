@@ -44,7 +44,7 @@ from pycoinnet.util.Queue import Queue
 
 
 class TxCollector:
-    def __init__(self):
+    def __init__(self, peer_timeout=10):
         self.inv_item_db = {}
         # key: InvItem; value: weakref.WeakSet of peers
 
@@ -52,6 +52,7 @@ class TxCollector:
 
         self.fetchers_by_peer = {}
         self.tx_queue = Queue()
+        self.peer_timeout = peer_timeout
 
     def add_peer(self, peer):
         self.fetchers_by_peer[peer] = Fetcher(peer, ITEM_TYPE_TX)
@@ -103,7 +104,6 @@ class TxCollector:
 
     @asyncio.coroutine
     def _fetch_inv_item(self, inv_item):
-        TIMEOUT = 10.0
         while True:
             the_set = self.inv_item_db[inv_item]
             if len(the_set) == 0:
@@ -112,7 +112,7 @@ class TxCollector:
             peer = the_set.pop()
             the_set.add(peer)
             fetcher = self.fetchers_by_peer[peer]
-            tx = yield from fetcher.fetch(inv_item.data, timeout=TIMEOUT)
+            tx = yield from fetcher.fetch(inv_item.data, timeout=self.peer_timeout)
             if tx:
                 break
             the_set.discard(peer)
