@@ -27,8 +27,6 @@ class InvCollector:
         self.inv_item_db = {}
         # key: InvItem; value: weakref.WeakSet of peers
 
-        self.disinterested_inv_item_set = set()
-
         self.fetchers_by_peer = {}
         self.advertise_q_for_peer = {}
 
@@ -65,27 +63,27 @@ class InvCollector:
                 del self.fetchers_by_peer[peer]
                 advertise_task.cancel()
 
-        advertise_task = asyncio.Task(self._advertise_to_peer(peer))
+        advertise_task = asyncio.Task(_advertise_to_peer(peer))
 
         next_message = peer.new_get_next_message_f(lambda name, data: name == "inv")
-        asyncio.Task(self._watch_peer(peer, next_message, advertise_task))
+        asyncio.Task(_watch_peer(peer, next_message, advertise_task))
 
     @asyncio.coroutine
     def fetch(self, inv_item, peer_timeout=10):
         logging.debug("launched task to fetch %s", inv_item)
         while True:
-            the_set = self.inv_item_db[inv_item.data]
-            if len(the_set) == 0:
+            the_dict = self.inv_item_db[inv_item.data]
+            if len(the_dict) == 0:
                 logging.error("couldn't find a place from which to fetch %s", inv_item)
                 del self.inv_item_db[inv_item.data]
                 return
-            peer = the_set.pop()
-            logging.debug("trying to fetch %s from %s, timeout %s", inv_item, peer, self.peer_timeout)
+            peer, when = the_dict.popitem()
+            logging.debug("trying to fetch %s from %s, timeout %s", inv_item, peer, peer_timeout)
             fetcher = self.fetchers_by_peer.get(peer)
             if not fetcher:
                 logging.debug("no fetcher for %s", peer)
                 continue
-            item = yield from fetcher.fetch(inv_item.data, timeout=self.peer_timeout)
+            item = yield from fetcher.fetch(inv_item.data, timeout=peer_timeout)
             if item:
                 return item
 
@@ -93,14 +91,8 @@ class InvCollector:
         for q in self.advertise_q_for_peer.values():
             q.put_nowait(inv_item)
 
-    def add_disinterested(self, disinterested_inv_item):
-        self.disinterested_inv_item_set.add(disinterested_inv_item)
-
-    def remove_disinterested(self, disinterested_inv_item):
-        self.disinterested_inv_item_set.discard(disinterested_inv_item)
-
-    def _register_inv_item(self, peer, inv_item):
-        logging.debug("inv from %s : %d items", peer, len(items))
+    def _register_inv_item(self, inv_item, peer):
+        logging.debug("%s from %s", inv_item, peer)
         the_hash = inv_item.data
         if the_hash not in self.inv_item_db:
             # it's new!
