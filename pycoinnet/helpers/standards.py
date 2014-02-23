@@ -29,9 +29,9 @@ def manage_connection_count(address_queue, protocol_factory, connection_count=4)
                 transport, protocol = yield from asyncio.get_event_loop().create_connection(
                     protocol_factory, host=host, port=port)
                 logging.info("connected (tcp) to %s:%d", host, port)
-                event_q.put_nowait(("connect", (host, port)))
-                yield from asyncio.wait_for(protocol.did_connection_lost, timeout=None)
-                event_q.put_nowait(("disconnect", (host, port)))
+                event_q.put_nowait(("connect", (host, port), protocol))
+                yield from asyncio.wait_for(protocol.connection_lost_future, timeout=None)
+                event_q.put_nowait(("disconnect", (host, port), protocol))
             except Exception:
                 logging.exception("failed to connect to %s:%d", host, port)
 
@@ -109,6 +109,10 @@ def install_pong_manager(peer):
             peer.send_msg("pong", nonce=data["nonce"])
     next_message = peer.new_get_next_message_f(lambda name, data: name == 'ping')
     asyncio.Task(pong_task(next_message))
+
+def install_pingpong_manager(peer):
+    install_ping_manager(peer)
+    install_pong_manager(peer)
 
 @asyncio.coroutine
 def get_date_address_tuples(peer):
