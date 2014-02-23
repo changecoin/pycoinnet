@@ -108,6 +108,7 @@ class TxCollector:
             the_set = self.inv_item_db[inv_item]
             if len(the_set) == 0:
                 logging.error("couldn't find a place to fetch %s from", inv_item)
+                del self.inv_item_db[inv_item]
                 return
             peer = the_set.pop()
             the_set.add(peer)
