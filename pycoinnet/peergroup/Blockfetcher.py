@@ -16,9 +16,9 @@ import logging
 import time
 import weakref
 
-from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK
-
+from pycoinnet.InvItem import ITEM_TYPE_BLOCK
 from pycoinnet.peer.Fetcher import Fetcher
+
 
 class Blockfetcher:
     def __init__(self):
@@ -31,8 +31,13 @@ class Blockfetcher:
     def get_block_future(self, block_hash, block_index):
         future = asyncio.Future()
         item = (block_index, block_hash, future)
-        self.block_hash_priority_queue.put_nowait((block_index, block_hash, future))
+        self.block_hash_priority_queue.put_nowait(item)
         return future
+
+    def get_block(self, block_hash, block_index):
+        future = self.get_block_future(block_hash, block_index)
+        block = asyncio.wait_for(future, timeout=None)
+        return block
 
     # for each peer, a loop:
     #   pull an item out of priority queue
@@ -53,7 +58,6 @@ class Blockfetcher:
         while True:
             items_to_try = []
             items_to_not_try = []
-            count = 0
             while True:
                 item = yield from self.block_hash_priority_queue.get()
                 if item in missing or item[0] > last_block_index:
@@ -72,27 +76,29 @@ class Blockfetcher:
                 if item[-1].done():
                     break
                 future = block_fetcher.fetch_future(item[1])
+
                 def make_cb(the_future):
                     def cb(f):
                         if not the_future.done():
                             the_future.set_result(f.result())
                     return cb
+
                 future.add_done_callback(make_cb(item[-1]))
                 futures.append(future)
             if len(futures) == 0:
                 continue
             done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             finish_time = time.time() - start_time
+            logging.debug("time elapsed %f s for %s", finish_time, peer)
             if len(pending) > 0:
+                logging.debug("unfinished, decreasing loop count from %d", per_loop)
                 per_loop = int(per_loop * 0.5 + 1)
-                logging.debug("time elapsed %f s but unfinished, decreasing count per loop to %d for %s", finish_time, per_loop, peer)
                 done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             else:
                 if finish_time * 3 < loop_timeout:
+                    logging.debug("increasing loop count from %d", per_loop)
                     per_loop = min(1000, int(0.8 + 1.4 * per_loop))
-                    logging.debug("time elapsed %f s, increasing count per loop to %d for %s", finish_time, per_loop, peer)
-                else:
-                    logging.debug("time elapsed %f s, keeping count at %d for %s", finish_time, per_loop, peer)
+            logging.debug("loop count now %d", per_loop)
             for item in items_to_try:
                 if not item[-1].done():
                     self.block_hash_priority_queue.put(item)

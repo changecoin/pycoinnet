@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import time
-import weakref
 
 from asyncio import PriorityQueue
 
@@ -72,6 +71,7 @@ def fast_forwarder_add_peer_f(blockchain):
                 # otherwise, this peer is stupid and should be ignored
 
     asyncio.Task(_run_ff(blockchain))
+
     def add_peer(peer, last_block_index):
         peer_queue.put_nowait((0, (peer, last_block_index, dict(total_seconds=0, records=0))))
 

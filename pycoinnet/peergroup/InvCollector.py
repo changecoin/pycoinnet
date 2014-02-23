@@ -13,7 +13,7 @@ import logging
 import time
 import weakref
 
-from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX, ITEM_TYPE_BLOCK
+from pycoinnet.InvItem import ITEM_TYPE_TX
 from pycoinnet.peer.Fetcher import Fetcher
 
 

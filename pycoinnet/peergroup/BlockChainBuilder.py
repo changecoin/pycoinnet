@@ -25,12 +25,8 @@
 import asyncio
 import time
 
-from asyncio.queues import PriorityQueue
-
-from pycoinnet.InvItem import InvItem
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK
 from pycoinnet.util.Queue import Queue
-
-ITEM_TYPE_TX, ITEM_TYPE_BLOCK = (1, 2)
 
 
 class BlockChainBuilder:
@@ -76,7 +72,7 @@ class BlockChainBuilder:
 
     def handle_msg_version(self, peer, **kwargs):
         lbi = kwargs.get("last_block_index")
-        services = kwargs.get("services")
+        #services = kwargs.get("services")
         # TODO: check services to see if they have blocks or just headers
         self.peer_queue.put_nowait((0, (peer, lbi, dict(total_seconds=0, records=0))))
 

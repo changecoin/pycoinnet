@@ -1,7 +1,8 @@
 import asyncio
 import logging
 
-from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX, ITEM_TYPE_BLOCK
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX
+
 
 class TxMempool:
     def __init__(self, inv_collector, is_interested_f=lambda inv_item: inv_item.item_type == ITEM_TYPE_TX):
