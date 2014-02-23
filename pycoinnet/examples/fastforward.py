@@ -32,7 +32,7 @@ TESTNET_MAGIC_HEADER = binascii.unhexlify('0B110907')
 
 @asyncio.coroutine
 def run_peer(peer, fast_forward_add_peer):
-    yield from asyncio.wait_for(peer.did_connection_made, timeout=None)
+    yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
     version_parameters = default_msg_version_parameters(peer)
     version_data = yield from initial_handshake(peer, version_parameters)
     last_block_index = version_data["last_block_index"]
