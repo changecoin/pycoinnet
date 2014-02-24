@@ -8,137 +8,175 @@ import argparse
 import asyncio
 import binascii
 import logging
+import os
 
-from pycoin.serialize import b2h_rev
-
-from pycoinnet.InvItem import InvItem
+from pycoinnet.InvItem import ITEM_TYPE_BLOCK
 
 from pycoinnet.util.BlockChain import BlockChain
 from pycoinnet.util.LocalDB_RAM import LocalDB
-from pycoinnet.util.PetrifyDB_RAM import PetrifyDB
+from pycoinnet.util.PetrifyDB import PetrifyDB
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
-from pycoinnet.peer.InvItemHandler import InvItemHandler
-from pycoinnet.peer.PingPongHandler import PingPongHandler
 
+from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
 from pycoinnet.peergroup.Blockfetcher import Blockfetcher
-from pycoinnet.peergroup.BlockChainBuilder import BlockChainBuilder
-from pycoinnet.peergroup.ConnectionManager import ConnectionManager
 from pycoinnet.peergroup.InvCollector import InvCollector
+from pycoinnet.peergroup.TxMempool import TxMempool
+
+from pycoinnet.helpers.networks import MAINNET
+from pycoinnet.helpers.standards import default_msg_version_parameters
+from pycoinnet.helpers.standards import initial_handshake
+from pycoinnet.helpers.standards import install_ping_manager
+from pycoinnet.helpers.standards import install_pong_manager
+from pycoinnet.helpers.standards import manage_connection_count
+from pycoinnet.helpers.dnsbootstrap import new_queue_of_timestamp_peeraddress_tuples
 
 from pycoinnet.util.Queue import Queue
 
-MAINNET_MAGIC_HEADER = binascii.unhexlify('F9BEB4D9')
-TESTNET_MAGIC_HEADER = binascii.unhexlify('0B110907')
+from pycoinnet.PeerAddress import PeerAddress
 
-TESTNET_DNS_BOOTSTRAP = [
-    "bitcoin.petertodd.org", "testnet-seed.bitcoin.petertodd.org",
-    "bluematt.me", "testnet-seed.bluematt.me"
-]
 
-MAINNET_DNS_BOOTSTRAP = [
-    "bitseed.xf2.org", "dnsseed.bluematt.me",
-    "seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org"
-]
+@asyncio.coroutine
+def download_blocks(block_chain, blockfetcher, change_q, blockdir, depth, fast_forward_block_index):
 
-from pycoin.convention import satoshi_to_btc
+    block_future_q = Queue()
 
-def show_tx(tx):
-    logging.info("Tx ID %s", b2h_rev(tx.hash()))
-    for idx, tx_out in enumerate(tx.txs_out):
-        ba = tx_out.bitcoin_address()
-        if ba:
-            logging.info("%d: %s %s BTC", idx, ba, satoshi_to_btc(tx_out.coin_value))
-        else:
-            logging.info("can't figure out destination of tx_out id %d", idx)
-
-def run():
-    ADDRESS_QUEUE = Queue(maxsize=20)
-
-    local_db = LocalDB()
-    #petrify_db = PetrifyDB("blockstore", b'\0'*32)
-    petrify_db = PetrifyDB(b'\0'*32)
-    block_chain = BlockChain(local_db, petrify_db)
-    inv_collector = InvCollector()
-    block_chain_builder = BlockChainBuilder(block_chain, inv_collector)
-    blockfetcher = Blockfetcher()
-
-    def create_protocol_callback():
-        peer = BitcoinPeerProtocol(MAINNET_MAGIC_HEADER)
-        peer.register_delegate(cm)
-        InvItemHandler(peer)
-        PingPongHandler(peer)
-        peer.register_delegate(inv_collector)
-        peer.register_delegate(block_chain_builder)
-        peer.register_delegate(blockfetcher)
-        peer.run()
-        return peer
-
-    cm = ConnectionManager(ADDRESS_QUEUE, create_protocol_callback)
-
-    @asyncio.coroutine
-    def fetch_addresses(dns_bootstrap):
-        yield from ADDRESS_QUEUE.put(("127.0.0.1", 28333))
-        yield from asyncio.sleep(18000)
-        for h in dns_bootstrap:
-            r = yield from asyncio.get_event_loop().getaddrinfo(h, 8333)
-            results = set(t[-1][:2] for t in r)
-            for t in results:
-                yield from ADDRESS_QUEUE.put(t)
-                logging.debug("got address %s", t)
-
-    @asyncio.coroutine
-    def tx_collector():
-
-        @asyncio.coroutine
-        def fetch_tx(item):
-            tx = yield from inv_collector.download_inv_item(item)
-            name = tx.id()
-            #f = open("txs/%s" % name, "wb")
-            #tx.stream(f)
-            #f.close()
-            show_tx(tx)
-
-        while True:
-            item = yield from inv_collector.next_new_tx_inv_item()
-            asyncio.Task(fetch_tx(item))
-
-    block_change_queue = block_chain_builder.new_block_change_queue()
-
-    @asyncio.coroutine
-    def monitor_block_change_queue(q):
-        while True:
-            op, the_hash, block_index = yield from q.get()
-            if op == "add":
-                logging.debug("adding block with hash %s", b2h_rev(the_hash))
-                if block_index >= 284567:
-                    asyncio.Task(grab_block(the_hash, block_index))
-            if op == "remove":
-                pass
-
-    @asyncio.coroutine
-    def grab_block(the_hash, block_index):
-        block = yield from blockfetcher.get_block(the_hash, block_index)
-        logging.info("got block %s", block.id())
-        f = open("blockstore/block-%06d-%s.bin" % (block_index, block.id()), "wb")
+    def write_block_to_disk(block, block_index):
+        p = os.path.join(blockdir, "block-%06d-%s.bin" % (block_index, block.id()))
+        tmp_path = p + ".tmp"
+        f = open(tmp_path, "wb")
         block.stream(f)
         f.close()
+        os.rename(tmp_path, p)
 
-    asyncio.Task(monitor_block_change_queue(block_change_queue))
+    @asyncio.coroutine
+    def block_write_loop(block_future_q):
+        while True:
+            block_future, block_index = yield from block_future_q.get()
+            yield from block_future.wait_for(block_future, timeout=None)
+            block = block_future.result()
+            write_to_disk(block, block_index)
 
-    cm.run()
-    asyncio.Task(fetch_addresses(MAINNET_DNS_BOOTSTRAP))
-    #asyncio.Task(tx_collector())
+    def download(block_hash, block_index):
+        f = blockfetcher.get_block_future(block_hash, block_index)
+        block = yield from asyncio.wait_for(f, timeout=None)
+        logging.info("got block id %s", block.id())
+        asyncio.get_event_loop().run_in_executor(None, write_to_disk, block_index, block)
 
+    asyncio.Task(block_write_loop(block_future_q))
+
+    while True:
+        add_or_remove, block_hash, block_index = yield from change_q.get()
+        if add_or_remove == 'add':
+            if block_index > fast_forward_block_index:
+                if block_chain.has_full_block_for_hash(block_hash):
+                    future = asyncio.Future()
+                    future.set_result(block_chain.full_block_for_hash(block_hash))
+                else:
+                    # get it
+                    future = blockfetcher.get_block_future(block_hash, block_index)
+                block_future_q.add(future, block_index)
+            if block_index - depth < fast_forward_block_index:
+                continue
+            index = block_index - depth
+            the_block = block_chain.item_for_index(block_index-depth)
+            write_to_disk(index, the_block)
+            if block_index > fast_forward_block_index:
+                asyncio.Task(download(block_hash, block_index))
+
+@asyncio.coroutine
+def show_connection_info(connection_info_q):
+    while True:
+        verb, noun, peer = yield from connection_info_q.get()
+        logging.info("connection manager: %s on %s", verb, noun)
+
+def write_block_to_disk(blockdir, block, block_index):
+    p = os.path.join(blockdir, "block-%06d-%s.bin" % (block_index, block.id()))
+    tmp_path = p + ".tmp"
+    f = open(tmp_path, "wb")
+    block.stream(f)
+    f.close()
+    os.rename(tmp_path, p)
+
+def block_processor(change_q, blockfetcher, inv_collector, config_dir, blockdir, depth, fast_forward):
+    # load the last processed block index
+    # HACK. We should go to disk to cache this
+    block_q = Queue()
+    last_processed_block = fast_forward
+    while True:
+        the_next = yield from change_q.get()
+        if the_next[0] == "remove":
+            the_other = block_q.pop()
+            if the_other == 'add' and the_other[1:] != the_next[1:]:
+                logging.fatal("problem merging! did the block chain fork? %s %s")
+                import sys
+                sys.exit(-1)
+            continue
+        if the_next[0] != "add":
+            logging.error("something weird from change_q")
+            continue
+        if the_next[2] < fast_forward:
+            continue
+        item = (blockfetcher.get_block_future(the_next[1], the_next[2]), the_next[1], the_next[2])
+        block_q.put_nowait(item)
+        while block_q.qsize() >= depth:
+            # we have blocks that are buries and ready to write
+            future, block_hash, block_index = yield from block_q.get()
+            block = yield from asyncio.wait_for(future, timeout=None)
+            write_block_to_disk(blockdir, block, block_index)
+
+@asyncio.coroutine
+def run_peer(peer, fast_forward_add_peer, blockfetcher):
+    yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
+    version_parameters = default_msg_version_parameters(peer)
+    version_data = yield from initial_handshake(peer, version_parameters)
+    last_block_index = version_data["last_block_index"]
+    fast_forward_add_peer(peer, last_block_index)
+    blockfetcher.add_peer(peer, last_block_index)
 
 def main():
+    parser = argparse.ArgumentParser(description="Watch Bitcoin network for new blocks.")
+    parser.add_argument('-c', "--config-dir", help='The directory where config files are stored.')
+    parser.add_argument('-f', "--fast-forward", type=int, help="block index to fast-forward to (ie. don't download full blocks prior to this one)", default=0)
+    parser.add_argument('-d', "--depth", type=int, help="Minimum depth blocks must be buried before being dropped in blockdir", default=2)
+    parser.add_argument("blockdir", help='The directory where new blocks are dropped.')
+
     asyncio.tasks._DEBUG = True
     logging.basicConfig(
         level=logging.DEBUG,
         format=('%(asctime)s [%(process)d] [%(levelname)s] '
                 '%(filename)s:%(lineno)d %(message)s'))
-    run()
+    logging.getLogger("asyncio").setLevel(logging.INFO)
+    queue_of_timestamp_peeraddress_tuples = new_queue_of_timestamp_peeraddress_tuples(MAINNET)
+    if 0:
+        queue_of_timestamp_peeraddress_tuples = Queue()
+        queue_of_timestamp_peeraddress_tuples.put_nowait((0, PeerAddress(1, "127.0.0.1", 28333)))
+
+    args = parser.parse_args()
+    config_dir = args.config_dir
+
+    local_db = LocalDB()
+    petrify_db = PetrifyDB(dir_path=config_dir)
+    block_chain = BlockChain(local_db, petrify_db)
+    change_q = block_chain.new_change_q()
+    blockfetcher = Blockfetcher()
+
+    inv_collector = InvCollector()
+    tx_mempool = TxMempool(inv_collector, is_interested_f=lambda inv_item: inv_item.item_type == ITEM_TYPE_BLOCK)
+
+    asyncio.Task(block_processor(change_q, blockfetcher, inv_collector, args.config_dir, args.blockdir, args.depth, args.fast_forward))
+    fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
+
+    def create_protocol_callback():
+        peer = BitcoinPeerProtocol(MAINNET["MAGIC_HEADER"])
+        install_ping_manager(peer)
+        install_pong_manager(peer)
+        asyncio.Task(run_peer(peer, fast_forward_add_peer, blockfetcher))
+        return peer
+
+    connection_info_q = manage_connection_count(queue_of_timestamp_peeraddress_tuples, create_protocol_callback, 8)
+    asyncio.Task(show_connection_info(connection_info_q))
     asyncio.get_event_loop().run_forever()
 
-
-main()
+if __name__ == '__main__':
+    main()
