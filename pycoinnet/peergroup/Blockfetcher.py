@@ -95,7 +95,7 @@ class Blockfetcher:
                 per_loop = int(per_loop * 0.5 + 1)
                 done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             else:
-                if finish_time * 3 < loop_timeout:
+                if finish_time * 3 < loop_timeout and len(items_to_try) >= per_loop:
                     logging.debug("increasing loop count from %d", per_loop)
                     per_loop = min(1000, int(0.8 + 1.4 * per_loop))
             logging.debug("loop count now %d", per_loop)
