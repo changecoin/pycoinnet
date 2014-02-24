@@ -100,25 +100,28 @@ def write_block_to_disk(blockdir, block, block_index):
 
 def block_processor(change_q, blockfetcher, inv_collector, config_dir, blockdir, depth, fast_forward):
     # load the last processed block index
+    last_processed_block = 0  ## should load from disk
     # HACK. We should go to disk to cache this
     block_q = Queue()
-    last_processed_block = fast_forward
+    last_processed_block = max(last_processed_block, fast_forward)
     while True:
-        the_next = yield from change_q.get()
-        if the_next[0] == "remove":
+        add_remove, block_hash, block_index = yield from change_q.get()
+        if add_remove == "remove":
             the_other = block_q.pop()
-            if the_other == 'add' and the_other[1:] != the_next[1:]:
-                logging.fatal("problem merging! did the block chain fork? %s %s")
+            if the_other[1:] != (block_hash, block_index):
+                logging.fatal("problem merging! did the block chain fork? %s %s", the_other, block_hash)
                 import sys
                 sys.exit(-1)
             continue
-        if the_next[0] != "add":
+        if add_remove != "add":
             logging.error("something weird from change_q")
             continue
-        if the_next[2] < fast_forward:
+        if block_index < fast_forward:
             continue
-        item = (blockfetcher.get_block_future(the_next[1], the_next[2]), the_next[1], the_next[2])
+        item = (blockfetcher.get_block_future(block_hash, block_index), block_hash, block_index)
         block_q.put_nowait(item)
+        if change_q.qsize() > 0:
+            continue
         while block_q.qsize() >= depth:
             # we have blocks that are buries and ready to write
             future, block_hash, block_index = yield from block_q.get()
