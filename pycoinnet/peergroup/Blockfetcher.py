@@ -98,7 +98,7 @@ class Blockfetcher:
                 if finish_time * 3 < loop_timeout and len(items_to_try) >= per_loop:
                     logging.debug("increasing loop count from %d", per_loop)
                     per_loop = min(1000, int(0.8 + 1.4 * per_loop))
-            logging.debug("loop count now %d", per_loop)
+            logging.debug("loop count now %d for %s", per_loop, peer)
             for item in items_to_try:
                 if not item[-1].done():
                     self.block_hash_priority_queue.put(item)
