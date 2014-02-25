@@ -1,10 +1,6 @@
-import binascii
 import logging
-import os
 import weakref
 
-from pycoin.block import BlockHeader
-from pycoin.serialize import b2h_rev
 from pycoinnet.util.ChainFinder import ChainFinder
 from pycoinnet.util.Queue import Queue
 
@@ -67,8 +63,30 @@ class BlockChain:
         return q
 
     def lock_to_index(self, index):
-        index -= 0
-        pass
+        index -= len(self._locked_chain)
+        longest_chain = self._longest_local_block_chain()
+        if index < 1:
+            return
+        excluded = set()
+        for idx in range(index):
+            the_hash = longest_chain[-idx-1]
+            parent_hash = self.parent_hash if idx <= 0 else self._longest_chain_cache[-idx]
+            weight = self.weight_lookup.get(the_hash)
+            item = (the_hash, parent_hash, weight)
+            self._locked_chain.append(item)
+            excluded.add(the_hash)
+        old_chain_finder = self.chain_finder
+        self.chain_finder = ChainFinder()
+        self._longest_chain_cache = None
+        def iterate():
+            for tree in old_chain_finder.trees_from_bottom.values():
+                for c in tree:
+                    if c in excluded:
+                        break
+                    excluded.add(c)
+                    yield (c, old_chain_finder.parent_lookup[c])
+        self.chain_finder.load_nodes(iterate())
+        self.parent_hash = the_hash
 
     def _longest_local_block_chain(self):
         if self._longest_chain_cache is None:
@@ -110,12 +128,12 @@ class BlockChain:
         # return a list of operations:
         # ("add"/"remove", the_hash, the_index)
         ops = []
-        size = len(old_longest_chain)
+        size = len(old_longest_chain) + len(self._locked_chain)
         for idx, h in enumerate(old_path):
             op = ("remove", h, size-idx-1)
             ops.append(op)
             del self.hash_to_index_lookup[size-idx-1]
-        size = len(new_longest_chain)
+        size = len(new_longest_chain) + len(self._locked_chain)
         for idx, h in reversed(list(enumerate(new_path))):
             op = ("add", h, size-idx-1)
             ops.append(op)
