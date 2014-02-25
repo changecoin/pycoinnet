@@ -40,6 +40,8 @@ class BlockChain:
         return len(self._locked_chain)
 
     def tuple_for_index(self, index):
+        if index < 0:
+            index = self.length() + index
         l = len(self._locked_chain)
         if index < l:
             return self._locked_chain[index]
@@ -50,6 +52,11 @@ class BlockChain:
         parent_hash = self.parent_hash if index <= 0 else self._longest_chain_cache[-index]
         weight = self.weight_lookup.get(the_hash)
         return (the_hash, parent_hash, weight)
+
+    def last_block_hash(self):
+        if self.length() == 0:
+            return self.parent_hash
+        return self.hash_for_index(-1)
 
     def hash_for_index(self, index):
         return self.tuple_for_index(index)[0]
@@ -124,6 +131,7 @@ class BlockChain:
             logging.debug("old_path is %s-%s", old_path[0], old_path[-1])
         if new_path:
             logging.debug("new_path is %s-%s", new_path[0], new_path[-1])
+            logging.debug("block chain now has %d elements", self.length())
 
         # return a list of operations:
         # ("add"/"remove", the_hash, the_index)
@@ -140,5 +148,8 @@ class BlockChain:
             self.hash_to_index_lookup[size-idx-1] = h
         for q in self.change_queues:
             _update_q(q, ops)
+
+        ## TODO: put this somewhere smarter
+        self.lock_to_index(self.length()-100)
 
         return ops

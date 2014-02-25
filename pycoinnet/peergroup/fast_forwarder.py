@@ -20,11 +20,11 @@ def fast_forwarder_add_peer_f(blockchain):
     @asyncio.coroutine
     def _fetch_missing(peer, blockchain):
         next_message = peer.new_get_next_message_f(lambda msg, data: msg == 'block')
-        for h in blockchain.missing_parents():
+        for h in blockchain.chain_finder.missing_parents():
             peer.send_msg("getdata", items=[InvItem(ITEM_TYPE_BLOCK, h)])
             msg, data = yield from next_message()
             block = data["block"]
-            ops = blockchain.add_items([block])
+            ops = blockchain.add_nodes([(block.hash(), block.previous_block_hash, block.difficulty)])
             if len(ops) > 0:
                 break
         return ops
@@ -36,10 +36,10 @@ def fast_forwarder_add_peer_f(blockchain):
         # even if they vanish. I think.
         while 1:
             priority, (peer, lbi, rate_dict) = yield from peer_queue.get()
-            if lbi - blockchain.block_chain_size() > 0:
+            if lbi - blockchain.length() > 0:
                 # let's get some headers from this guy!
                 start_time = time.time()
-                h = blockchain.last_blockchain_hash()
+                h = blockchain.last_block_hash()
                 try:
                     headers = yield from asyncio.wait_for(get_headers_hashes(peer, h), timeout=10)
                 except EOFError:
@@ -58,7 +58,7 @@ def fast_forwarder_add_peer_f(blockchain):
                 rate_dict["records"] += len(headers)
                 priority = - rate_dict["records"] / rate_dict["total_seconds"]
                 # let's make sure we actually extend the chain
-                ops = blockchain.add_items(headers)
+                ops = blockchain.add_nodes((h.hash(), h.previous_block_hash, h.difficulty) for h in headers)
                 ## this hack is necessary because the stupid default client
                 # does not send the genesis block!
                 try:
