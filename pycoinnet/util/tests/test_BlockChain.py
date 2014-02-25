@@ -9,8 +9,9 @@ def longest_local_block_chain(self):
     return c
 
 
+parent_for_0 = "motherless"
+
 def test_basic():
-    parent_for_0 = "motherless"
     BC = BlockChain(parent_for_0)
     ITEMS = [(i, i-1, 1) for i in range(100)]
     ITEMS[0] = (0, parent_for_0, 1)
@@ -166,3 +167,31 @@ def test_fork():
     expected += [("add", i, i+4-301) for i in range(301,306)]
     assert ops == expected
     assert set(BC.chain_finder.missing_parents()) == set([parent_for_0])
+
+
+def test_large():
+    SIZE = 30000
+    ITEMS = [(i, i-1, 1) for i in range(SIZE)]
+    ITEMS[0] = (0, parent_for_0, 1)
+    BC = BlockChain(parent_for_0)
+    assert longest_local_block_chain(BC) == []
+    assert BC.length() == 0
+    assert set(BC.chain_finder.missing_parents()) == set()
+
+    ops = BC.add_nodes(ITEMS)
+    assert ops == [("add", i, i) for i in range(SIZE)]
+    assert longest_local_block_chain(BC) == list(range(SIZE))
+    #assert BC.length() == 10
+    assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
+    #assert BC.petrified_block_count() == 90
+    assert BC.parent_hash == parent_for_0
+    assert BC.length() == SIZE
+    #assert BC.hash_is_known(0)
+    #assert not BC.hash_is_known(-1)
+    for i in range(SIZE):
+        #assert BC.hash_is_known(i)
+        v = BC.tuple_for_index(i)
+        assert v[0] == i
+        assert v[1] == parent_for_0 if i == 0 else i
+    #assert not BC.hash_is_known(100)
+    assert BC.index_for_hash(-1) is None
