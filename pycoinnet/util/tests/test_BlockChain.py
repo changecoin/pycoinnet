@@ -28,8 +28,6 @@ def test_basic():
     assert BC.locked_length() == 0
     assert set(BC.chain_finder.missing_parents()) == set()
     assert BC.parent_hash == parent_for_0
-    #assert not BC.hash_is_known(0)
-    #assert not BC.hash_is_known(-1)
     assert BC.index_for_hash(0) is None
     assert BC.index_for_hash(-1) is None
 
@@ -40,13 +38,10 @@ def test_basic():
     assert BC.length() == 5
     assert BC.locked_length() == 0
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
-    #assert not BC.hash_is_known(-1)
     for i in range(5):
-        #assert BC.hash_is_known(i)
         v = BC.tuple_for_index(i)
         assert v[0] == i
         assert v[1] == parent_for_0 if i == 0 else i
-    #assert not BC.hash_is_known(6)
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[:7])
@@ -56,14 +51,10 @@ def test_basic():
     assert BC.length() == 7
     assert BC.locked_length() == 0
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
-    #assert BC.hash_is_known(0)
-    #assert not BC.hash_is_known(-1)
     for i in range(7):
-        #assert BC.hash_is_known(i)
         v = BC.tuple_for_index(i)
         assert v[0] == i
         assert v[1] == parent_for_0 if i == 0 else i
-    #assert not BC.hash_is_known(7)
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[10:14])
@@ -74,14 +65,10 @@ def test_basic():
     assert BC.locked_length() == 0
     assert BC.length() == 7
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0, 9}
-    #assert BC.hash_is_known(0)
-    #assert not BC.hash_is_known(-1)
     for i in range(7):
-        #assert BC.hash_is_known(i)
         v = BC.tuple_for_index(i)
         assert v[0] == i
         assert v[1] == parent_for_0 if i == 0 else i
-    #assert not BC.hash_is_known(7)
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[7:10])
@@ -91,14 +78,10 @@ def test_basic():
     assert BC.parent_hash == parent_for_0
     assert BC.locked_length() == 0
     assert BC.length() == 14
-    #assert BC.hash_is_known(0)
-    #assert not BC.hash_is_known(-1)
     for i in range(14):
-        #assert BC.hash_is_known(i)
         v = BC.tuple_for_index(i)
         assert v[0] == i
         assert v[1] == parent_for_0 if i == 0 else i
-    #assert not BC.hash_is_known(14)
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[90:])
@@ -108,14 +91,10 @@ def test_basic():
     assert BC.parent_hash == parent_for_0
     assert BC.locked_length() == 0
     assert BC.length() == 14
-    #assert BC.hash_is_known(0)
-    #assert not BC.hash_is_known(-1)
     for i in range(14):
-        #assert BC.hash_is_known(i)
         v = BC.tuple_for_index(i)
         assert v[0] == i
         assert v[1] == parent_for_0 if i == 0 else i
-    #assert not BC.hash_is_known(14)
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[14:90])
@@ -125,14 +104,10 @@ def test_basic():
     assert BC.parent_hash == parent_for_0
     assert BC.locked_length() == 0
     assert BC.length() == 100
-    #assert BC.hash_is_known(0)
-    #assert not BC.hash_is_known(-1)
     for i in range(100):
-        #assert BC.hash_is_known(i)
         v = BC.tuple_for_index(i)
         assert v[0] == i
         assert v[1] == parent_for_0 if i == 0 else i
-    #assert not BC.hash_is_known(100)
     assert BC.index_for_hash(-1) is None
 
 
@@ -187,14 +162,10 @@ def test_large():
     assert BC.parent_hash == parent_for_0
     assert BC.locked_length() == 0
     assert BC.length() == SIZE
-    #assert BC.hash_is_known(0)
-    #assert not BC.hash_is_known(-1)
     for i in range(SIZE):
-        #assert BC.hash_is_known(i)
         v = BC.tuple_for_index(i)
         assert v[0] == i
         assert v[1] == parent_for_0 if i == 0 else i
-    #assert not BC.hash_is_known(100)
     assert BC.index_for_hash(-1) is None
 
 
