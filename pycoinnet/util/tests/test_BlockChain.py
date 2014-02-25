@@ -18,8 +18,8 @@ def test_basic():
 
     assert longest_local_block_chain(BC) == []
     assert BC.length() == 0
+    assert BC.locked_length() == 0
     assert set(BC.chain_finder.missing_parents()) == set()
-    #assert BC.petrified_block_count() == 0
     assert BC.parent_hash == parent_for_0
     #assert not BC.hash_is_known(0)
     #assert not BC.hash_is_known(-1)
@@ -28,12 +28,11 @@ def test_basic():
 
     ops = BC.add_nodes(ITEMS[:5])
     assert ops == [("add", i, i) for i in range(5)]
-    #assert BC.petrified_block_count() == 0
     assert BC.parent_hash == parent_for_0
     assert longest_local_block_chain(BC) == list(range(5))
     assert BC.length() == 5
+    assert BC.locked_length() == 0
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
-    #assert BC.petrified_block_count() == 0
     #assert not BC.hash_is_known(-1)
     for i in range(5):
         #assert BC.hash_is_known(i)
@@ -45,13 +44,11 @@ def test_basic():
 
     ops = BC.add_nodes(ITEMS[:7])
     assert ops == [("add", i, i) for i in range(5,7)]
-    #assert BC.petrified_block_count() == 0
     assert BC.parent_hash == parent_for_0
     assert longest_local_block_chain(BC) == list(range(7))
     assert BC.length() == 7
+    assert BC.locked_length() == 0
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
-    assert BC.length() == 7
-    #assert BC.petrified_block_count() == 0
     #assert BC.hash_is_known(0)
     #assert not BC.hash_is_known(-1)
     for i in range(7):
@@ -64,13 +61,12 @@ def test_basic():
 
     ops = BC.add_nodes(ITEMS[10:14])
     assert ops == []
-    #assert BC.petrified_block_count() == 0
     assert BC.parent_hash == parent_for_0
     assert longest_local_block_chain(BC) == [0, 1, 2, 3, 4, 5, 6]
+    assert BC.locked_length() == 0
+    assert BC.locked_length() == 0
     assert BC.length() == 7
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0, 9}
-    assert BC.length() == 7
-    #assert BC.petrified_block_count() == 0
     #assert BC.hash_is_known(0)
     #assert not BC.hash_is_known(-1)
     for i in range(7):
@@ -84,10 +80,9 @@ def test_basic():
     ops = BC.add_nodes(ITEMS[7:10])
     assert ops == [("add", i, i) for i in range(7,14)]
     assert longest_local_block_chain(BC) == list(range(14))
-    #assert BC.length() == 10
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
-    #assert BC.petrified_block_count() == 4
     assert BC.parent_hash == parent_for_0
+    assert BC.locked_length() == 0
     assert BC.length() == 14
     #assert BC.hash_is_known(0)
     #assert not BC.hash_is_known(-1)
@@ -102,10 +97,9 @@ def test_basic():
     ops = BC.add_nodes(ITEMS[90:])
     assert ops == []
     assert longest_local_block_chain(BC) == list(range(14))
-    #assert BC.length() == 10
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0, 89}
-    #assert BC.petrified_block_count() == 4
     assert BC.parent_hash == parent_for_0
+    assert BC.locked_length() == 0
     assert BC.length() == 14
     #assert BC.hash_is_known(0)
     #assert not BC.hash_is_known(-1)
@@ -120,10 +114,9 @@ def test_basic():
     ops = BC.add_nodes(ITEMS[14:90])
     assert ops == [("add", i, i) for i in range(14,100)]
     assert longest_local_block_chain(BC) == list(range(100))
-    #assert BC.length() == 10
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
-    #assert BC.petrified_block_count() == 90
     assert BC.parent_hash == parent_for_0
+    assert BC.locked_length() == 0
     assert BC.length() == 100
     #assert BC.hash_is_known(0)
     #assert not BC.hash_is_known(-1)
@@ -151,6 +144,7 @@ def test_fork():
     ITEMS[301] = (301, 3, 1)
 
     assert longest_local_block_chain(BC) == []
+    assert BC.locked_length() == 0
     assert BC.length() == 0
     assert set(BC.chain_finder.missing_parents()) == set()
 
@@ -175,16 +169,16 @@ def test_large():
     ITEMS[0] = (0, parent_for_0, 1)
     BC = BlockChain(parent_for_0)
     assert longest_local_block_chain(BC) == []
+    assert BC.locked_length() == 0
     assert BC.length() == 0
     assert set(BC.chain_finder.missing_parents()) == set()
 
     ops = BC.add_nodes(ITEMS)
     assert ops == [("add", i, i) for i in range(SIZE)]
     assert longest_local_block_chain(BC) == list(range(SIZE))
-    #assert BC.length() == 10
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
-    #assert BC.petrified_block_count() == 90
     assert BC.parent_hash == parent_for_0
+    assert BC.locked_length() == 0
     assert BC.length() == SIZE
     #assert BC.hash_is_known(0)
     #assert not BC.hash_is_known(-1)
