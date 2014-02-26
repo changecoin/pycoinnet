@@ -23,13 +23,14 @@ def _update_q(q, ops):
 
 
 class BlockChain:
-    def __init__(self, parent_hash=ZERO_HASH):
+    def __init__(self, parent_hash=ZERO_HASH, did_lock_to_index_f=None):
         self.parent_hash = parent_hash
         self.hash_to_index_lookup = {}
         self.weight_lookup = {}
         self.chain_finder = ChainFinder()
         self.change_queues = set() #weakref.WeakSet()
         self._longest_chain_cache = None
+        self.did_lock_to_index_f = did_lock_to_index_f
 
         self._locked_chain = []
 
@@ -70,7 +71,8 @@ class BlockChain:
         return q
 
     def lock_to_index(self, index):
-        index -= len(self._locked_chain)
+        old_length = len(self._locked_chain)
+        index -= old_length
         longest_chain = self._longest_local_block_chain()
         if index < 1:
             return
@@ -82,9 +84,12 @@ class BlockChain:
             item = (the_hash, parent_hash, weight)
             self._locked_chain.append(item)
             excluded.add(the_hash)
+        if self.did_lock_to_index_f:
+            self.did_lock_to_index_f(self._locked_chain[old_length:old_length+index], old_length)
         old_chain_finder = self.chain_finder
         self.chain_finder = ChainFinder()
         self._longest_chain_cache = None
+
         def iterate():
             for tree in old_chain_finder.trees_from_bottom.values():
                 for c in tree:
@@ -121,7 +126,10 @@ class BlockChain:
         new_longest_chain = self._longest_local_block_chain()
 
         if old_longest_chain and new_longest_chain:
-            old_path, new_path = self.chain_finder.find_ancestral_path(old_longest_chain[0], new_longest_chain[0])
+            old_path, new_path = self.chain_finder.find_ancestral_path(
+                old_longest_chain[0],
+                new_longest_chain[0]
+            )
             old_path = old_path[:-1]
             new_path = new_path[:-1]
         else:
@@ -148,8 +156,5 @@ class BlockChain:
             self.hash_to_index_lookup[size-idx-1] = h
         for q in self.change_queues:
             _update_q(q, ops)
-
-        ## TODO: put this somewhere smarter
-        self.lock_to_index(self.length()-100)
 
         return ops

@@ -1,6 +1,7 @@
 import logging
 import os
 
+
 class BlockChainStore:
     PETRIFIED_FN = "petrified.bin"
 
