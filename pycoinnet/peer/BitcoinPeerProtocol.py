@@ -95,6 +95,9 @@ class BitcoinPeerProtocol(asyncio.Protocol):
             self.connection_lost_future.set_exception(exc)
         else:
             self.connection_lost_future.set_result(None)
+        ## TODO: fix this. This is a stupid way of doing it.
+        ## What is the correct way to shut this down?
+        self.reader.feed_eof()
 
     def data_received(self, data):
         self.bytes_read += len(data)
