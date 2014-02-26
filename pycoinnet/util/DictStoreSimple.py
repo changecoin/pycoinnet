@@ -52,6 +52,3 @@ class DictStoreSimple(collections.abc.MutableMapping):
 
     def keys(self):
         return self.__iter__()
-
-
-#__getitem__(), __setitem__(), __delitem__(), and keys()
