@@ -25,9 +25,9 @@ def test_TxMempool_simple():
             tx_mempool.add_peer(peer)
         for peer in peer_list:
             peer.send_msg("mempool")
-        while len(tx_mempool.pool) < 20:
+        while len(tx_mempool.tx_pool) < 20:
             yield from asyncio.sleep(0.1)
-        return tx_mempool.pool
+        return tx_mempool.tx_pool
 
     f1 = asyncio.Task(run_client([peer1_2, peer1_3], []))
     f2 = asyncio.Task(run_client([peer2_1], TX_LIST[:10]))

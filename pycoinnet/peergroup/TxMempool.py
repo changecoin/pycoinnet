@@ -8,7 +8,8 @@ class TxMempool:
     def __init__(self, inv_collector, is_interested_f=lambda inv_item: inv_item.item_type == ITEM_TYPE_TX):
         self.inv_collector = inv_collector
         self.q = inv_collector.new_inv_item_queue()
-        self.pool = {}
+        self.tx_pool = {}
+        self.block_pool = {}
         self.is_interested_f = is_interested_f
         asyncio.Task(self._run())
 
@@ -21,7 +22,7 @@ class TxMempool:
         def _run_mempool(next_message):
             try:
                 name, data = yield from next_message()
-                inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in self.pool.values()]
+                inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in self.tx_pool.values()]
                 logging.debug("sending inv of %d item(s) in response to mempool", len(inv_items))
                 if len(inv_items) > 0:
                     peer.send_msg("inv", items=inv_items)
@@ -35,19 +36,20 @@ class TxMempool:
                 name, data = yield from next_message()
                 inv_items = data["items"]
                 not_found = []
-                tx_found = []
+                txs_found = []
+                blocks_found = []
                 for inv_item in inv_items:
-                    if inv_item in self.pool:
-                        if inv_item.item_type == ITEM_TYPE_TX:
-                            tx_found.append(self.pool[inv_item])
-                        else:
-                            not_found.append(inv_item)
+                    pool, the_list = (self.tx_pool, txs_found) if inv_item.item_type == ITEM_TYPE_TX else (self.block_pool, blocks_found)
+                    if inv_item.data in pool:
+                        the_list.append(pool[inv_item.data])
                     else:
                         not_found.append(inv_item)
                 if not_found:
                     peer.send_msg("notfound", items=not_found)
-                for tx in tx_found:
+                for tx in txs_found:
                     peer.send_msg("tx", tx=tx)
+                for block in blocks_found:
+                    peer.send_msg("block", block=block)
 
         asyncio.Task(_run_mempool(peer.new_get_next_message_f(lambda name, data: name == 'mempool')))
         asyncio.Task(_run_getdata(peer.new_get_next_message_f(lambda name, data: name == 'getdata')))
@@ -57,18 +59,27 @@ class TxMempool:
         Add a transaction to the mempool and advertise it to peers so it can
         propogate throughout the network.
         """
-        inv_item = InvItem(ITEM_TYPE_TX, tx.hash())
-        if inv_item not in self.pool:
-            self.pool[inv_item] = tx
-            self.inv_collector.advertise_item(inv_item)
+        the_hash = tx.hash()
+        if the_hash not in self.tx_pool:
+            self.tx_pool[the_hash] = tx
+            self.inv_collector.advertise_item(InvItem(ITEM_TYPE_TX, the_hash))
+
+    def add_block(self, block):
+        the_hash = block.hash()
+        if the_hash not in self.block_pool:
+            self.block_pool[the_hash] = block
+            self.inv_collector.advertise_item(InvItem(ITEM_TYPE_BLOCK, the_hash))
 
     @asyncio.coroutine
     def _run(self):
         @asyncio.coroutine
         def fetch_item(inv_item):
             item = yield from self.inv_collector.fetch(inv_item)
-            if inv_item.item_type == ITEM_TYPE_TX:
-                self.add_tx(item)
+            if item:
+                if inv_item.item_type == ITEM_TYPE_TX:
+                    self.add_tx(item)
+                else:
+                    self.add_block(item)
 
         while True:
             inv_item = yield from self.q.get()
