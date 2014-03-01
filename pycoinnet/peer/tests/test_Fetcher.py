@@ -16,6 +16,9 @@ def create_handshaked_peers():
     asyncio.get_event_loop().run_until_complete(asyncio.wait([initial_handshake(peer1, VERSION_MSG), initial_handshake(peer2, VERSION_MSG_2)]))
     return peer1, peer2
 
+def mi(the_hash):
+    return InvItem(ITEM_TYPE_TX, the_hash)
+
 def test_fetcher():
     peer1, peer2 = create_peers()
 
@@ -63,20 +66,20 @@ def test_fetcher():
     def run_peer2():
         r = []
         yield from standards.initial_handshake(peer2, VERSION_MSG_2)
-        tx_fetcher = Fetcher(peer2, ITEM_TYPE_TX)
+        tx_fetcher = Fetcher(peer2)
 
-        tx = yield from tx_fetcher.fetch(TX_LIST[0].hash(), timeout=5)
+        tx = yield from tx_fetcher.fetch(mi(TX_LIST[0].hash()), timeout=5)
         r.append(tx)
 
-        tx = yield from tx_fetcher.fetch(TX_LIST[1].hash())
+        tx = yield from tx_fetcher.fetch(mi(TX_LIST[1].hash()))
         r.append(tx)
 
-        tx = yield from tx_fetcher.fetch(TX_LIST[2].hash())
+        tx = yield from tx_fetcher.fetch(mi(TX_LIST[2].hash()))
         r.append(tx)
 
-        f1 = tx_fetcher.fetch_future(TX_LIST[3].hash())
-        f2 = tx_fetcher.fetch_future(TX_LIST[4].hash())
-        f3 = tx_fetcher.fetch_future(TX_LIST[5].hash())
+        f1 = tx_fetcher.fetch_future(mi(TX_LIST[3].hash()))
+        f2 = tx_fetcher.fetch_future(mi(TX_LIST[4].hash()))
+        f3 = tx_fetcher.fetch_future(mi(TX_LIST[5].hash()))
         yield from asyncio.wait([f1, f2, f3])
 
         r.append(f1.result())
@@ -126,8 +129,8 @@ def test_fetcher_timeout():
     def run_peer2():
         r = []
         yield from standards.initial_handshake(peer2, VERSION_MSG_2)
-        tx_fetcher = Fetcher(peer2, ITEM_TYPE_TX)
-        tx = yield from tx_fetcher.fetch(TX_LIST[0].hash(), timeout=2)
+        tx_fetcher = Fetcher(peer2)
+        tx = yield from tx_fetcher.fetch(mi(TX_LIST[0].hash()), timeout=2)
         r.append(tx)
         return r
 
