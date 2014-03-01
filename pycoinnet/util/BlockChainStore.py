@@ -26,7 +26,9 @@ class BlockChainStore:
             pass
 
     def did_lock_to_index(self, block_tuple_list, start_index):
-        with open(os.path.join(self.dir_path, self.PETRIFIED_FN), "ab") as f:
+        with open(os.path.join(self.dir_path, self.PETRIFIED_FN), "a+b") as f:
+            pass
+        with open(os.path.join(self.dir_path, self.PETRIFIED_FN), "r+b") as f:
             f.seek(start_index*32)
             count = 0
             ## TODO: make sure the one we're writing is in the right place
