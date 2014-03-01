@@ -11,7 +11,6 @@ class BlockChainStore:
 
     def block_tuple_iterator(self):
         try:
-            #import pdb; pdb.set_trace()
             with open(os.path.join(self.dir_path, self.PETRIFIED_FN), "rb") as f:
                 prev_hash = self.parent_to_0
                 while 1:

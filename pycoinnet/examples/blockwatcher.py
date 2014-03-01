@@ -12,6 +12,7 @@ import os
 from pycoinnet.InvItem import ITEM_TYPE_BLOCK
 
 from pycoinnet.util.BlockChain import BlockChain
+from pycoinnet.util.BlockChainStore import BlockChainStore
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 
@@ -92,6 +93,21 @@ def run_peer(peer, fast_forward_add_peer, blockfetcher, tx_mempool, inv_collecto
     tx_mempool.add_peer(peer)
     inv_collector.add_peer(peer)
 
+def block_chain_locker(block_chain):
+    @asyncio.coroutine
+    def _run(block_chain, change_q):
+        LOCKED_MULTIPLE = 32
+        while True:
+            total_length = block_chain.length()
+            locked_length = block_chain.locked_length()
+            unlocked_length = total_length - locked_length
+            if unlocked_length > LOCKED_MULTIPLE:
+                new_locked_length = total_length - (total_length % LOCKED_MULTIPLE) - LOCKED_MULTIPLE
+                block_chain.lock_to_index(new_locked_length)
+            # wait for a change to blockchain
+            op, block_header, block_index = yield from change_q()
+
+    asyncio.Task(_run(block_chain, block_chain.new_change_q()))
 
 def main():
     parser = argparse.ArgumentParser(description="Watch Bitcoin network for new blocks.")
@@ -121,7 +137,12 @@ def main():
     args = parser.parse_args()
 
     block_chain = BlockChain()
+    block_chain_store = BlockChainStore(args.config_dir)
     change_q = block_chain.new_change_q()
+
+    block_chain_locker(block_chain)
+    block_chain.add_nodes(block_chain_store.block_tuple_iterator())
+
     blockfetcher = Blockfetcher()
 
     inv_collector = InvCollector()
