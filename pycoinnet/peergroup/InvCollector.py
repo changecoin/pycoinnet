@@ -30,7 +30,7 @@ class InvCollector:
         """
         Add a peer whose inv messages we want to monitor.
         """
-        self.fetchers_by_peer[peer] = Fetcher(peer, ITEM_TYPE_TX)
+        self.fetchers_by_peer[peer] = Fetcher(peer)
         q = asyncio.Queue()
         self.advertise_queues.add(q)
 
@@ -94,7 +94,7 @@ class InvCollector:
             if not fetcher:
                 logging.error("no fetcher for %s", peer)
                 continue
-            item = yield from fetcher.fetch(inv_item.data, timeout=peer_timeout)
+            item = yield from fetcher.fetch(inv_item, timeout=peer_timeout)
             if item:
                 logging.debug("got %s", item)
                 return item
