@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK, ITEM_TYPE_TX
 
 
 class TxMempool:

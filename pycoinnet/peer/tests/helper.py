@@ -5,6 +5,7 @@ from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.PeerAddress import PeerAddress
 
+from pycoin.block import Block
 from pycoin.tx.Tx import Tx, TxIn, TxOut
 
 MAGIC_HEADER = b"food"
@@ -84,3 +85,9 @@ def make_tx(i):
     txs_out = [TxOut(i*40000, make_hash(i*20000+idx)) for idx in range(2)]
     tx = Tx(1, txs_in, txs_out)
     return tx
+
+def make_block(i):
+    s = i*30000
+    txs = [make_tx(i) for i in range(s, s+8)]
+    block = Block(version=1, previous_block_hash=b'\0'*32, merkle_root=b'\0'*32, timestamp=1390000000+i, difficulty=s, nonce=s, txs=txs)
+    return block
