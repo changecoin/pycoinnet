@@ -4,8 +4,8 @@ import logging
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK, ITEM_TYPE_TX
 
 
-class TxMempool:
-    def __init__(self, inv_collector, is_interested_f=lambda inv_item: inv_item.item_type == ITEM_TYPE_TX):
+class Mempool:
+    def __init__(self, inv_collector, is_interested_f=lambda inv_item: True):
         self.inv_collector = inv_collector
         self.q = inv_collector.new_inv_item_queue()
         self.tx_pool = {}

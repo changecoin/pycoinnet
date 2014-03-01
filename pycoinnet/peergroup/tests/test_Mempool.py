@@ -2,12 +2,12 @@ import asyncio
 
 from pycoinnet.peer.tests.helper import create_handshaked_peers, make_tx, make_block
 from pycoinnet.peergroup.InvCollector import InvCollector
-from pycoinnet.peergroup.TxMempool import TxMempool
+from pycoinnet.peergroup.Mempool import Mempool
 
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX, ITEM_TYPE_BLOCK
 
 
-def test_TxMempool_simple():
+def test_Mempool_simple():
     # create some peers
     peer1_2, peer2_1 = create_handshaked_peers(ip1="127.0.0.1", ip2="127.0.0.2")
     peer1_3, peer3_1 = create_handshaked_peers(ip1="127.0.0.1", ip2="127.0.0.3")
@@ -18,19 +18,19 @@ def test_TxMempool_simple():
     @asyncio.coroutine
     def run_client(peer_list, tx_list, block_list):
         inv_collector = InvCollector()
-        tx_mempool = TxMempool(inv_collector)
+        mempool = Mempool(inv_collector)
         for tx in tx_list:
-            tx_mempool.add_tx(tx)
+            mempool.add_tx(tx)
         for block in block_list:
-            tx_mempool.add_block(block)
+            mempool.add_block(block)
         for peer in peer_list:
             inv_collector.add_peer(peer)
-            tx_mempool.add_peer(peer)
+            mempool.add_peer(peer)
         for peer in peer_list:
             peer.send_msg("mempool")
-        while len(tx_mempool.tx_pool) < 20 and len(tx_mempool.block_pool) < 2:
+        while len(mempool.tx_pool) < 20 and len(mempool.block_pool) < 2:
             yield from asyncio.sleep(0.1)
-        return tx_mempool.tx_pool
+        return mempool.tx_pool
 
     f1 = asyncio.Task(run_client([peer1_2, peer1_3], [], []))
     f2 = asyncio.Task(run_client([peer2_1], TX_LIST[:10], BLOCK_LIST[0:1]))
