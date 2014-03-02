@@ -45,6 +45,100 @@ def test_Mempool_simple():
         assert set(tx.hash() for tx in r.values()) == set(tx.hash() for tx in TX_LIST)
 
 
+
+
+
+def test_Mempool_tcp():
+    # create server
+
+    PORT = 60661
+
+    TX_LIST = [make_tx(i) for i in range(20)]
+    BLOCK_LIST = make_blocks(10)
+
+    block_lookup = dict((b.hash(), b) for b in BLOCK_LIST)
+
+    def create_peer1():
+        block_chain = BlockChain()
+        change_q = block_chain.new_change_q()
+
+        blockfetcher = Blockfetcher()
+        inv_collector = InvCollector()
+        mempool = Mempool(inv_collector)
+
+        BL1 = BLOCK_LIST[:-1]
+        BL2 = BLOCK_LIST[-1:]
+        for block in BL1:
+            mempool.add_block(block)
+
+        block_chain.add_nodes(
+            (block.hash(), block.previous_block_hash, block.difficulty) for block in BL1)
+
+        fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
+
+        @asyncio.coroutine
+        def run_peer1(peer):
+            yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
+            version_parameters = default_msg_version_parameters(peer, last_block_index=block_chain.length())
+            version_data = yield from initial_handshake(peer, version_parameters)
+            last_block_index = version_data["last_block_index"]
+            fast_forward_add_peer(peer, last_block_index)
+            blockfetcher.add_peer(peer, inv_collector.fetcher_for_peer(peer), last_block_index)
+            mempool.add_peer(peer)
+            inv_collector.add_peer(peer)
+            install_get_handler(peer, block_chain, block_lookup)
+            yield from asyncio.sleep(3)
+            import pdb; pdb.set_trace()
+
+        peer = BitcoinPeerProtocol(MAGIC_HEADER)
+        asyncio.Task(run_peer1(peer))
+        return peer
+
+    def create_peer2():
+        block_chain = BlockChain()
+        change_q = block_chain.new_change_q()
+
+        blockfetcher = Blockfetcher()
+        inv_collector = InvCollector()
+        mempool = Mempool(inv_collector)
+
+        fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
+
+        @asyncio.coroutine
+        def run_peer2(peer):
+            yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
+            version_parameters = default_msg_version_parameters(peer, last_block_index=block_chain.length())
+            version_data = yield from initial_handshake(peer, version_parameters)
+            last_block_index = version_data["last_block_index"]
+            fast_forward_add_peer(peer, last_block_index)
+            blockfetcher.add_peer(peer, inv_collector.fetcher_for_peer(peer), last_block_index)
+            mempool.add_peer(peer)
+            inv_collector.add_peer(peer)
+            install_get_handler(peer, block_chain, block_lookup)
+            yield from asyncio.sleep(3)
+            ops = yield from change_q.get()
+            import pdb; pdb.set_trace()
+
+        peer = BitcoinPeerProtocol(MAGIC_HEADER)
+        asyncio.Task(run_peer2(peer))
+        return peer
+
+    @asyncio.coroutine
+    def run_listener():
+        abstract_server = yield from asyncio.get_event_loop().create_server(protocol_factory=create_peer1, port=PORT)
+        return abstract_server
+
+    @asyncio.coroutine
+    def run_connector():
+        transport, protocol = yield from asyncio.get_event_loop().create_connection(
+            create_peer2, host="127.0.0.1", port=PORT)
+
+    asyncio.Task(run_listener())
+    asyncio.Task(run_connector())
+
+    asyncio.get_event_loop().run_forever()
+
+
 import logging
 asyncio.tasks._DEBUG = True
 logging.basicConfig(
