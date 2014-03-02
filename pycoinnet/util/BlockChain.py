@@ -34,6 +34,9 @@ class BlockChain:
 
         self._locked_chain = []
 
+    def is_hash_known(the_hash):
+        return the_hash in self.hash_to_index_lookup
+
     def length(self):
         return len(self._longest_local_block_chain()) + len(self._locked_chain)
 
@@ -111,6 +114,13 @@ class BlockChain:
                     max_weight = weight
             self._longest_chain_cache = longest[:-1]
         return self._longest_chain_cache
+
+    def add_headers(self, header_iter):
+        def hash_parent_weight_tuples():
+            for h in header_iter:
+                yield h.hash(), h.previous_block_hash, h.difficulty
+
+        return self.add_nodes(hash_parent_weight_tuples())
 
     def add_nodes(self, hash_parent_weight_tuples):
         def iterate():

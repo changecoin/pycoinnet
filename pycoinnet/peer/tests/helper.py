@@ -91,3 +91,13 @@ def make_block(i):
     txs = [make_tx(i) for i in range(s, s+8)]
     block = Block(version=1, previous_block_hash=b'\0'*32, merkle_root=b'\0'*32, timestamp=1390000000+i, difficulty=s, nonce=s, txs=txs)
     return block
+
+def make_blocks(count, nonce_base=30000, previous_block_hash=b'\0' * 32):
+    blocks = []
+    for i in range(count):
+        s = i * nonce_base
+        txs = [make_tx(i) for i in range(s, s+8)]
+        block = Block(version=1, previous_block_hash=previous_block_hash, merkle_root=b'\0'*32, timestamp=1390000000+i*600, difficulty=i, nonce=s, txs=txs)
+        blocks.append(block)
+        previous_block_hash = block.hash()
+    return blocks
