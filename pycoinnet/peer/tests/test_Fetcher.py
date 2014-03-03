@@ -1,4 +1,4 @@
-import asyncio
+from pycoinnet.util.debug_help import asyncio
 import hashlib
 
 from pycoin.tx.Tx import Tx, TxIn, TxOut
@@ -146,3 +146,74 @@ def test_fetcher_timeout():
     r = f2.result()
     assert len(r) == 1
     assert r[0] == None
+
+
+def test_fetcher_future():
+    peer1, peer2 = create_peers()
+
+    TX_LIST = [make_tx(i) for i in range(100)]
+
+    @asyncio.coroutine
+    def run_peer1():
+        r = []
+        yield from standards.initial_handshake(peer1, VERSION_MSG)
+        next_message = peer1.new_get_next_message_f()
+        t = yield from next_message()
+        r.append(t)
+        peer1.send_msg("tx", tx=TX_LIST[0])
+        return r
+
+    @asyncio.coroutine
+    def run_peer2():
+        r = []
+        yield from standards.initial_handshake(peer2, VERSION_MSG_2)
+        tx_fetcher = Fetcher(peer2)
+        f1 = tx_fetcher.fetch_future(mi(TX_LIST[0].hash()))
+        f2 = tx_fetcher.fetch_future(mi(TX_LIST[0].hash()))
+        f3 = asyncio.Future()
+        tx_fetcher.fetch_future(mi(TX_LIST[0].hash()), f3)
+        tx = yield from tx_fetcher.fetch(mi(TX_LIST[0].hash()), timeout=0.5)
+        r.append(tx)
+        r.append(f1)
+        r.append(f2)
+        r.append(f3)
+
+        # now this one will time out
+        f4 = tx_fetcher.fetch_future(mi(TX_LIST[1].hash()))
+        f5 = tx_fetcher.fetch_future(mi(TX_LIST[1].hash()))
+        f6 = asyncio.Future()
+        tx_fetcher.fetch_future(mi(TX_LIST[1].hash()), f6)
+        tx = yield from tx_fetcher.fetch(mi(TX_LIST[1].hash()), timeout=1)
+        r.append(tx)
+        r.append(f4)
+        r.append(f5)
+        r.append(f6)
+        return r
+
+    f1 = asyncio.Task(run_peer1())
+    f2 = asyncio.Task(run_peer2())
+
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
+
+    r = f1.result()
+    assert len(r) == 1
+    assert r[0] == ('getdata', dict(items=(InvItem(ITEM_TYPE_TX, TX_LIST[0].hash()),)))
+
+    r = f2.result()
+    assert len(r) == 8
+    tx, f1, f2, f3, tx_2, f4, f5, f6 = r
+    assert tx.hash() == TX_LIST[0].hash()
+    # f1 and f2 should be the same
+    assert f1 == f2
+    assert f1 != f3
+    assert f1.result().hash() == tx.hash()
+    assert f2.result().hash() == tx.hash()
+    assert f3.result().hash() == tx.hash()
+
+    assert tx_2 == None
+    # f4 and f5 should be the same
+    assert f4 == f5
+    assert f4 != f6
+    assert f4.done() == True
+    assert f5.done() == True
+    assert f6.done() == False

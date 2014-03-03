@@ -25,12 +25,21 @@ class Fetcher:
         except asyncio.TimeoutError:
             return None
 
-    def fetch_future(self, inv_item):
+    def fetch_future(self, inv_item, future=None):
+        existing_future = self.futures.get(inv_item)
+        if existing_future:
+            if future is None:
+                return existing_future
+            def cb(f):
+                if not future.done() and not future.cancelled():
+                    future.set_result(f.result())
+            existing_future.add_done_callback(cb)
+            return
+
         self.request_q.put_nowait(inv_item)
-        future = self.futures.get(inv_item)
-        if not future:
+        if future is None:
             future = asyncio.Future()
-            self.futures[inv_item] = future
+        self.futures[inv_item] = future
         return future
 
     def queue_size(self):
