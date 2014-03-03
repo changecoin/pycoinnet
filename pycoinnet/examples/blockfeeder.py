@@ -19,7 +19,7 @@ from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
 from pycoinnet.peergroup.Blockfetcher import Blockfetcher
 
-from pycoinnet.helpers.standards import default_msg_version_parameters
+from pycoinnet.helpers.standards import version_data_for_peer
 from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.helpers.standards import install_ping_manager
 from pycoinnet.helpers.standards import install_pong_manager
@@ -36,7 +36,7 @@ from pycoinnet.PeerAddress import PeerAddress
 @asyncio.coroutine
 def run_peer(peer, fast_forward_add_peer, blockfetcher):
     yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
-    version_parameters = default_msg_version_parameters(peer)
+    version_parameters = version_data_for_peer(peer)
     version_data = yield from initial_handshake(peer, version_parameters)
     last_block_index = version_data["last_block_index"]
     install_ping_manager(peer)
@@ -50,7 +50,7 @@ def feed_blocks(blockfetcher, change_q):
     transport, TARGET_PEER = yield from asyncio.get_event_loop().create_connection(
         lambda: BitcoinPeerProtocol(MAINNET_MAGIC_HEADER), host=host, port=port)
 
-    version_data = yield from initial_handshake(TARGET_PEER, default_msg_version_parameters(TARGET_PEER))
+    version_data = yield from initial_handshake(TARGET_PEER, version_data_for_peer(TARGET_PEER))
     install_ping_manager(TARGET_PEER)
     install_pong_manager(TARGET_PEER)
     last_block_index = version_data["last_block_index"]

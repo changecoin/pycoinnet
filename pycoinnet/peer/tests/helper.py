@@ -2,10 +2,12 @@ import asyncio
 import hashlib
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
-from pycoinnet.helpers.standards import initial_handshake
+from pycoinnet.helpers.standards import initial_handshake, version_data_for_peer
 from pycoinnet.PeerAddress import PeerAddress
 
+from pycoin import ecdsa
 from pycoin.block import Block
+from pycoin.encoding import public_pair_to_sec
 from pycoin.tx.Tx import Tx, TxIn, TxOut
 
 MAGIC_HEADER = b"food"
@@ -66,15 +68,15 @@ def create_peers(ip1="127.0.0.1", ip2="127.0.0.2"):
     peer2.connection_made(pt2)
     return peer1, peer2
 
-def create_handshaked_peers(ip1="127.0.0.1", ip2="127.0.0.2"):
-    peer1, peer2 = create_peers(ip1, ip2)
-    pa1 = PeerAddress(1, ip1, 6111)
-    pa2 = PeerAddress(1, ip2, 6111)
-    msg1 = dict(VERSION_MSG)
-    msg1.update(dict(local_address=pa1, remote_address=pa2))
-    msg2 = dict(VERSION_MSG)
-    msg2.update(dict(local_address=pa2, remote_address=pa1))
+def handshake_peers(peer1, peer2, peer_info_1={}, peer_info_2={}):
+    msg1 = version_data_for_peer(peer1, **peer_info_1)
+    msg2 = version_data_for_peer(peer2, **peer_info_2)
     asyncio.get_event_loop().run_until_complete(asyncio.wait([initial_handshake(peer1, msg1), initial_handshake(peer2, msg2)]))
+    return peer1, peer2
+
+def create_handshaked_peers(ip1="127.0.0.1", ip2="127.0.0.2"):
+    peer1, peer2 = create_peers(ip1=ip1, ip2=ip2)
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([initial_handshake(peer1, VERSION_MSG), initial_handshake(peer2, VERSION_MSG_2)]))
     return peer1, peer2
 
 def make_hash(i):
@@ -92,12 +94,24 @@ def make_block(i):
     block = Block(version=1, previous_block_hash=b'\0'*32, merkle_root=b'\0'*32, timestamp=1390000000+i, difficulty=s, nonce=s, txs=txs)
     return block
 
+def coinbase_tx(secret_exponent):
+    public_pair = ecdsa.public_pair_for_secret_exponent(ecdsa.secp256k1.generator_secp256k1, secret_exponent)
+    public_key_sec = public_pair_to_sec(public_pair)
+    return Tx.coinbase_tx(public_key_sec, 2500000000)
+
+COINBASE_TX = coinbase_tx(1)
+
 def make_blocks(count, nonce_base=30000, previous_block_hash=b'\0' * 32):
     blocks = []
     for i in range(count):
         s = i * nonce_base
-        txs = [make_tx(i) for i in range(s, s+8)]
-        block = Block(version=1, previous_block_hash=previous_block_hash, merkle_root=b'\0'*32, timestamp=1390000000+i*600, difficulty=i, nonce=s, txs=txs)
+        txs = [COINBASE_TX] # + [make_tx(i) for i in range(s, s+8)]
+        nonce = s
+        while True:
+            block = Block(version=1, previous_block_hash=previous_block_hash, merkle_root=b'\0'*32, timestamp=1390000000+i*600, difficulty=i, nonce=nonce, txs=txs)
+            if block.hash()[-1] == i & 0xff:
+                break
+            nonce += 1
         blocks.append(block)
         previous_block_hash = block.hash()
     return blocks

@@ -19,10 +19,10 @@ from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
 
 from pycoinnet.helpers.standards import manage_connection_count
-from pycoinnet.helpers.standards import default_msg_version_parameters
 from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.helpers.standards import install_ping_manager
 from pycoinnet.helpers.standards import install_pong_manager
+from pycoinnet.helpers.standards import version_data_for_peer
 
 from pycoinnet.util.Queue import Queue
 
@@ -33,7 +33,7 @@ TESTNET_MAGIC_HEADER = binascii.unhexlify('0B110907')
 @asyncio.coroutine
 def run_peer(peer, fast_forward_add_peer):
     yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
-    version_parameters = default_msg_version_parameters(peer)
+    version_parameters = version_data_for_peer(peer)
     version_data = yield from initial_handshake(peer, version_parameters)
     last_block_index = version_data["last_block_index"]
     fast_forward_add_peer(peer, last_block_index)

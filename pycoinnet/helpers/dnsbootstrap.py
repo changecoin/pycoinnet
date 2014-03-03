@@ -8,9 +8,9 @@ import logging
 
 from asyncio.queues import PriorityQueue
 
-from pycoinnet.helpers.standards import default_msg_version_parameters
 from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.helpers.standards import get_date_address_tuples
+from pycoinnet.helpers.standards import version_data_for_peer
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.util.Queue import Queue
 
@@ -51,7 +51,7 @@ def new_queue_of_timestamp_peeraddress_tuples(network_info, timestamp_peeraddres
                     lambda: BitcoinPeerProtocol(magic_header), host=host, port=port)
 
                 logging.debug("connected to superpeer at %s", peer_name)
-                yield from initial_handshake(peer, default_msg_version_parameters(peer))
+                yield from initial_handshake(peer, version_data_for_peer(peer))
                 logging.debug("handshake complete on %s", peer_name)
 
                 date_address_tuples = yield from get_date_address_tuples(peer)
