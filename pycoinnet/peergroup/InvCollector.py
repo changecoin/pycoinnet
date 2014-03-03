@@ -24,7 +24,7 @@ class InvCollector:
 
         self.fetchers_by_peer = {}
         self.advertise_queues = weakref.WeakSet()
-        self.inv_item_queues = weakref.WeakSet()
+        self.inv_item_queues = set()
         self.inv_item_fetchers_q = {}
 
     def add_peer(self, peer):
