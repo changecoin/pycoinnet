@@ -108,17 +108,14 @@ def items_for_client(initial_blocks=[]):
 
 
 def test_Mempool_tcp():
-    BLOCK_LIST = make_blocks(8)
-    BL1 = BLOCK_LIST[:-3]
-    BL2 = BLOCK_LIST[-3:]
+    BLOCK_LIST = make_blocks(32)
+    BL1 = BLOCK_LIST[:-8]
+    BL2 = BLOCK_LIST[-8:]
 
     mempool_1, block_chain_1, block_lookup_1, add_peer_1 = items_for_client(BL1)
     mempool_2, block_chain_2, block_lookup_2, add_peer_2 = items_for_client()
 
     peer1, peer2 = create_peers_tcp()
-
-    msg_f_1 = peer1.new_get_next_message_f()
-    msg_f_2 = peer2.new_get_next_message_f()
 
     handshake_peers(peer1, peer2, dict(local_ip="127.0.0.1", last_block_index=len(BL1)), dict(local_ip="127.0.0.2"))
 
@@ -148,28 +145,13 @@ def test_Mempool_tcp():
     r = wait_for_change_q(change_q_2, len(BL1))
 
     def show_msgs():
-        def msgs(msg_f):
-            l = []
-            try:
-                while True:
-                    l.append(asyncio.get_event_loop().run_until_complete(asyncio.wait_for(msg_f(), timeout=0.1)))
-            except asyncio.TimeoutError:
-                pass
-            return l
         print('-'*60)
-        msgs_1 = msgs(msg_f_1)
-        for m in msgs_1:
+        for m in peer1.msg_list:
             print(m)
         print('-'*60)
-        msgs_2 = msgs(msg_f_2)
-        for m in msgs_2:
+        for m in peer2.msg_list:
             print(m)
         print('-'*60)
-        #import pdb; pdb.set_trace()
-
-    show_msgs()
-
-    #import pdb; pdb.set_trace()
 
     assert len(r) == len(BL1)
     assert r == [('add', b.hash(), idx) for idx, b in enumerate(BL1)]
@@ -205,14 +187,11 @@ def test_Mempool_tcp():
 
     show_msgs()
 
-    #import pdb; pdb.set_trace()
     assert len(r) == len(BL2)
     assert r == [('add', b.hash(), idx+len(BL1)) for idx, b in enumerate(BL2)]
 
     assert block_chain_1.length() == len(BLOCK_LIST)
     assert block_chain_2.length() == len(BLOCK_LIST)
-
-    pass
 
 import logging
 asyncio.tasks._DEBUG = True

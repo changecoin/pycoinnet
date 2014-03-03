@@ -94,9 +94,7 @@ class InvCollector:
 
         @asyncio.coroutine
         def _q_change(q, futures, timeout=0):
-            logging.debug("_q_change sleeping %s", timeout)
             yield from asyncio.sleep(timeout)
-            logging.debug("_q_change waking up")
             peer, fetcher = yield from q.get()
             logging.debug("requesting %s from %s", inv_item, peer)
             future = asyncio.Task(fetcher.fetch(inv_item))

@@ -54,6 +54,17 @@ VERSION_MSG_2 = dict(
     last_block_index=0
 )
 
+def watch_messages(peer):
+    @asyncio.coroutine
+    def _watch(msg_list, next_message_f):
+        while True:
+            v = yield from next_message_f()
+            msg_list.append(v)
+            if v[0] == None:
+                break
+    peer.msg_list = []
+    asyncio.Task(_watch(peer.msg_list, peer.new_get_next_message_f()))
+
 def create_peers(ip1="127.0.0.1", ip2="127.0.0.2"):
     peer1 = BitcoinPeerProtocol(MAGIC_HEADER)
     peer2 = BitcoinPeerProtocol(MAGIC_HEADER)
@@ -77,6 +88,8 @@ def handshake_peers(peer1, peer2, peer_info_1={}, peer_info_2={}):
 
 def create_handshaked_peers(ip1="127.0.0.1", ip2="127.0.0.2"):
     peer1, peer2 = create_peers(ip1=ip1, ip2=ip2)
+    watch_messages(peer1)
+    watch_messages(peer2)
     asyncio.get_event_loop().run_until_complete(asyncio.wait([initial_handshake(peer1, VERSION_MSG), initial_handshake(peer2, VERSION_MSG_2)]))
     return peer1, peer2
 
@@ -111,6 +124,9 @@ def create_peers_tcp():
 
     peer2 = asyncio.get_event_loop().run_until_complete(asyncio.Task(run_connector(port)))
     peer1 = asyncio.get_event_loop().run_until_complete(future_peer)
+
+    watch_messages(peer1)
+    watch_messages(peer2)
 
     return peer1, peer2
 
