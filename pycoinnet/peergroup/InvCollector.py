@@ -18,13 +18,14 @@ from pycoinnet.peer.Fetcher import Fetcher
 
 
 class InvCollector:
-    def __init__(self):
+    def __init__(self, tx_store={}, block_store={}):
         self.inv_item_db = {}
-        # key: InvItem; value: weakref.WeakSet of peers
+        # key: InvItem; value: dictionary of peers to timestamps
 
         self.fetchers_by_peer = {}
         self.advertise_queues = weakref.WeakSet()
         self.inv_item_queues = weakref.WeakSet()
+        self.inv_item_fetchers_q = {}
 
     def add_peer(self, peer):
         """
@@ -59,16 +60,21 @@ class InvCollector:
             except EOFError:
                 del self.fetchers_by_peer[peer]
                 advertise_task.cancel()
+                for q in self.inv_item_queues:
+                    q.put_nowait(None)
 
         advertise_task = asyncio.Task(_advertise_to_peer(peer, q))
 
         next_message = peer.new_get_next_message_f(lambda name, data: name == "inv")
         asyncio.Task(_watch_peer(peer, next_message, advertise_task))
 
+    def fetcher_for_peer(self, peer):
+        return self.fetchers_by_peer.get(peer)
+
     def new_inv_item_queue(self):
         """
         Return a new queue that gets inv_items queued to it the first time
-        they are seen. Invoke "fetch" to get them.
+        they are seen. Invoke "get" to get them.
         """
         q = asyncio.Queue()
         self.inv_item_queues.add(q)
@@ -76,28 +82,52 @@ class InvCollector:
 
     @asyncio.coroutine
     def fetch(self, inv_item, peer_timeout=10):
-        """
-        Fetch an inv_item by trying to fetch it from peers. After peer_timeout
-        seconds, give up and try another peer. Returns None if the request could
-        not be fulfilled.
-        """
-        logging.debug("launched task to fetch %s", inv_item)
-        while True:
-            the_dict = self.inv_item_db[inv_item.data]
-            if len(the_dict) == 0:
-                logging.error("couldn't find a place from which to fetch %s", inv_item)
-                del self.inv_item_db[inv_item.data]
-                return
-            peer, when = the_dict.popitem()
-            logging.debug("trying to fetch %s from %s, timeout %s", inv_item, peer, peer_timeout)
+        q = asyncio.Queue()
+        items = sorted(self.inv_item_db[inv_item.data].items(), key=lambda pair: pair[-1])
+        for peer, when in items:
             fetcher = self.fetchers_by_peer.get(peer)
-            if not fetcher:
-                logging.error("no fetcher for %s", peer)
+            if fetcher:
+                q.put_nowait((peer, fetcher))
+        self.inv_item_fetchers_q[inv_item.data] = q
+
+        futures = []
+
+        @asyncio.coroutine
+        def _q_change(q, futures, timeout=0):
+            logging.debug("_q_change sleeping %s", timeout)
+            yield from asyncio.sleep(timeout)
+            logging.debug("_q_change waking up")
+            peer, fetcher = yield from q.get()
+            logging.debug("requesting %s from %s", inv_item, peer)
+            future = asyncio.Task(fetcher.fetch(inv_item))
+            futures.append(future)
+
+        while True:
+            timeout = peer_timeout if len(futures) > 0 else 0
+            q_change_future = asyncio.Task(_q_change(q, futures, timeout=timeout))
+            all_futures = futures + [q_change_future]
+            done, pending = yield from asyncio.wait(all_futures, return_when=asyncio.FIRST_COMPLETED)
+
+            if q_change_future in done:
                 continue
-            item = yield from fetcher.fetch(inv_item, timeout=peer_timeout)
-            if item:
-                logging.debug("got %s", item)
-                return item
+
+            for f in done:
+                r = f.result()
+                if r is None:
+                    futures.remove(f)
+                    del self.inv_item_db[inv_item.data][peer]
+                else:
+                    for p in pending:
+                        p.cancel()
+                    if inv_item.data in self.inv_item_fetchers_q:
+                        del self.inv_item_fetchers_q[inv_item.data]
+                    return r
+
+            logging.debug("got notfound")
+
+            if not q_change_future.cancelled():
+                q_change_future.cancel()
+
 
     def advertise_item(self, inv_item):
         """
@@ -115,3 +145,6 @@ class InvCollector:
             for q in self.inv_item_queues:
                 q.put_nowait(inv_item)
         self.inv_item_db[the_hash][peer] = time.time()
+        if the_hash in self.inv_item_fetchers_q:
+            fetcher = self.fetchers_by_peer.get(peer)
+            self.inv_item_fetchers_q[the_hash].put_nowait((peer, fetcher))

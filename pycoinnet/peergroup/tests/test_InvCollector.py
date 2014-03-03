@@ -1,4 +1,4 @@
-import asyncio
+from pycoinnet.util.debug_help import asyncio
 
 from pycoinnet.peer.tests.helper import create_handshaked_peers, make_tx
 from pycoinnet.peergroup.InvCollector import InvCollector
@@ -133,10 +133,10 @@ def test_TxCollector_notfound():
                         found.append(tx_db[inv_item.data])
                     else:
                         not_found.append(inv_item)
-                    if not_found:
-                        peer.send_msg("notfound", items=not_found)
-                    for tx in found:
-                        peer.send_msg("tx", tx=tx)
+                if not_found:
+                    peer.send_msg("notfound", items=not_found)
+                for tx in found:
+                    peer.send_msg("tx", tx=tx)
 
         return r
 
@@ -150,9 +150,12 @@ def test_TxCollector_notfound():
         while len(r) < 5:
             yield from asyncio.sleep(0.1)
             inv_item = yield from inv_item_q.get()
-            v = yield from inv_collector.fetch(inv_item)
-            if v:
-                r.append(v)
+            try:
+                v = yield from asyncio.wait_for(inv_collector.fetch(inv_item), timeout=0.5)
+                if v:
+                    r.append(v)
+            except asyncio.TimeoutError:
+                pass
         return r
 
     f2 = asyncio.Task(run_peer_2(peer2, TX_LIST))
@@ -167,9 +170,10 @@ def test_TxCollector_notfound():
 def test_TxCollector_retry():
     # create some peers
     peer1_2, peer2 = create_handshaked_peers()
-    peer1_3, peer3 = create_handshaked_peers()
+    peer1_3, peer3 = create_handshaked_peers(ip1="127.0.0.1", ip2="127.0.0.3")
 
     TX_LIST = [make_tx(i) for i in range(10)]
+    TX_LIST.sort(key=lambda tx: tx.id())
 
     @asyncio.coroutine
     def run_remote_peer(peer, txs, in_db_count, delay):
@@ -197,10 +201,12 @@ def test_TxCollector_retry():
                         found.append(tx_db[inv_item.data])
                     else:
                         not_found.append(inv_item)
-                    if not_found:
-                        peer.send_msg("notfound", items=not_found)
-                    for tx in found:
-                        peer.send_msg("tx", tx=tx)
+                if not_found:
+                    if len(not_found) == 9:
+                        not_found = not_found[:8]
+                    peer.send_msg("notfound", items=not_found)
+                for tx in found:
+                    peer.send_msg("tx", tx=tx)
         return r
 
     @asyncio.coroutine
@@ -210,14 +216,21 @@ def test_TxCollector_retry():
             inv_collector.add_peer(peer)
         r = []
         inv_item_q = inv_collector.new_inv_item_queue()
-        while len(r) < 10:
-            inv_item = yield from inv_item_q.get()
-            v = yield from inv_collector.fetch(inv_item)
+        
+        @asyncio.coroutine
+        def _do_fetch(inv_collector, inv_item, r):
+            v = yield from inv_collector.fetch(inv_item, peer_timeout=3.0)
             if v:
                 r.append(v)
+
+        for i in range(10):
+            inv_item = yield from inv_item_q.get()
+            asyncio.Task(_do_fetch(inv_collector, inv_item, r))
+        while len(r) < 10:
+            yield from asyncio.sleep(0.1)
         return r
 
-    f2 = asyncio.Task(run_remote_peer(peer2, TX_LIST, 1, 0.4))
+    f2 = asyncio.Task(run_remote_peer(peer2, TX_LIST, 1, 0.2))
     f3 = asyncio.Task(run_remote_peer(peer3, TX_LIST, 10, 1.0))
 
     f = asyncio.Task(run_local_peer([peer1_2, peer1_3]))
