@@ -20,6 +20,7 @@ def fast_forwarder_add_peer_f(blockchain):
     @asyncio.coroutine
     def _fetch_missing(peer, blockchain):
         next_message = peer.new_get_next_message_f(lambda msg, data: msg == 'block')
+        ops = []
         for h in blockchain.chain_finder.missing_parents():
             peer.send_msg("getdata", items=[InvItem(ITEM_TYPE_BLOCK, h)])
             msg, data = yield from next_message()
