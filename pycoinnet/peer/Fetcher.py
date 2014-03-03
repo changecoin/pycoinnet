@@ -19,28 +19,15 @@ class Fetcher:
         Return the fetched object or None if the remote says it doesn't have it, or
         times out by exceeding `timeout` seconds.
         """
-        future = self.fetch_future(inv_item)
+        future = self.futures.get(inv_item)
+        if not future:
+            future = asyncio.Future()
+            self.futures[inv_item] = future
+            self.request_q.put_nowait(inv_item)
         try:
             return (yield from asyncio.wait_for(future, timeout=timeout))
         except asyncio.TimeoutError:
             return None
-
-    def fetch_future(self, inv_item, future=None):
-        existing_future = self.futures.get(inv_item)
-        if existing_future:
-            if future is None:
-                return existing_future
-            def cb(f):
-                if not future.done() and not future.cancelled():
-                    future.set_result(f.result())
-            existing_future.add_done_callback(cb)
-            return
-
-        self.request_q.put_nowait(inv_item)
-        if future is None:
-            future = asyncio.Future()
-        self.futures[inv_item] = future
-        return future
 
     def queue_size(self):
         pass
