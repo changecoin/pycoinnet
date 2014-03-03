@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import logging
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.helpers.standards import initial_handshake, version_data_for_peer
@@ -77,6 +78,40 @@ def handshake_peers(peer1, peer2, peer_info_1={}, peer_info_2={}):
 def create_handshaked_peers(ip1="127.0.0.1", ip2="127.0.0.2"):
     peer1, peer2 = create_peers(ip1=ip1, ip2=ip2)
     asyncio.get_event_loop().run_until_complete(asyncio.wait([initial_handshake(peer1, VERSION_MSG), initial_handshake(peer2, VERSION_MSG_2)]))
+    return peer1, peer2
+
+def create_peers_tcp():
+    @asyncio.coroutine
+    def run_listener():
+        abstract_server = None
+        port = 60661
+        future_peer = asyncio.Future()
+        def protocol_factory():
+            peer = BitcoinPeerProtocol(MAGIC_HEADER)
+            future_peer.set_result(peer)
+            #abstract_server.close()
+            return peer
+        while abstract_server is None:
+            try:
+                abstract_server = yield from asyncio.get_event_loop().create_server(protocol_factory=protocol_factory, port=port)
+            except Exception as OSError:
+                port += 1
+        return abstract_server, port, future_peer
+
+    server, port, future_peer = asyncio.get_event_loop().run_until_complete(asyncio.Task(run_listener()))
+
+    @asyncio.coroutine
+    def run_connector(port):
+        def protocol_factory():
+            return BitcoinPeerProtocol(MAGIC_HEADER)
+        transport, protocol = yield from asyncio.get_event_loop().create_connection(
+            protocol_factory, host="127.0.0.1", port=port)
+        logging.debug("connected on port %s", port)
+        return protocol
+
+    peer2 = asyncio.get_event_loop().run_until_complete(asyncio.Task(run_connector(port)))
+    peer1 = asyncio.get_event_loop().run_until_complete(future_peer)
+
     return peer1, peer2
 
 def make_hash(i):

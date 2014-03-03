@@ -45,6 +45,7 @@ class Fetcher:
                 inv_item = yield from self.request_q.get()
             self.peer.send_msg("getdata", items=so_far)
 
+    @asyncio.coroutine
     def _fetch_loop(self, next_message, getdata_loop_future):
         try:
             while True:

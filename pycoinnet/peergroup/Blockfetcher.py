@@ -16,7 +16,7 @@ import logging
 import time
 import weakref
 
-from pycoinnet.InvItem import ITEM_TYPE_BLOCK
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK
 from pycoinnet.peer.Fetcher import Fetcher
 
 
@@ -25,12 +25,12 @@ class Blockfetcher:
         self.block_hash_priority_queue = asyncio.PriorityQueue()
         self.fetch_future_lookup = weakref.WeakKeyDictionary()
 
-    def add_peer(self, peer, last_block_index):
-        self.fetch_future_lookup[peer] = asyncio.Task(self.fetch_from_peer(peer, last_block_index))
+    def add_peer(self, peer, fetcher, last_block_index):
+        self.fetch_future_lookup[peer] = asyncio.Task(self.fetch_from_peer(peer, fetcher, last_block_index))
 
     def get_block_future(self, block_hash, block_index):
         future = asyncio.Future()
-        item = (block_index, block_hash, future)
+        item = (block_index, InvItem(ITEM_TYPE_BLOCK, block_hash), future)
         self.block_hash_priority_queue.put_nowait(item)
         return future
 
@@ -50,8 +50,7 @@ class Blockfetcher:
     #     if less than X/3 seconds used, double N
 
     @asyncio.coroutine
-    def fetch_from_peer(self, peer, last_block_index):
-        block_fetcher = Fetcher(peer, ITEM_TYPE_BLOCK)
+    def fetch_from_peer(self, peer, fetcher, last_block_index):
         missing = set()
         per_loop = 1
         loop_timeout = 30
@@ -75,7 +74,7 @@ class Blockfetcher:
             for item in items_to_try:
                 if item[-1].done():
                     break
-                future = block_fetcher.fetch_future(item[1])
+                future = asyncio.Task(fetcher.fetch(item[1]))
 
                 def make_cb(the_future):
                     def cb(f):

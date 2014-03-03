@@ -78,7 +78,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         packet = b"".join([
             self.magic_header, message_type_padded, message_size, message_checksum, message_data
         ])
-        logging.debug("sending message %s [%d bytes]", message_type.decode("utf8"), len(packet))
+        logging.debug("sending message %s [%d bytes] to %s", message_type.decode("utf8"), len(packet), self)
         self.bytes_writ += len(packet)
         self.transport.write(packet)
 
