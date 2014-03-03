@@ -15,18 +15,18 @@ from pycoinnet.util.BlockChain import BlockChain
 from pycoinnet.util.BlockChainStore import BlockChainStore
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
+from pycoinnet.peer.Fetcher import Fetcher
 
 from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
 from pycoinnet.peergroup.Blockfetcher import Blockfetcher
 from pycoinnet.peergroup.InvCollector import InvCollector
-from pycoinnet.peergroup.TxMempool import TxMempool
+from pycoinnet.peergroup.Mempool import Mempool
 
 from pycoinnet.helpers.networks import MAINNET
-from pycoinnet.helpers.standards import default_msg_version_parameters
 from pycoinnet.helpers.standards import initial_handshake
-from pycoinnet.helpers.standards import install_ping_manager
-from pycoinnet.helpers.standards import install_pong_manager
+from pycoinnet.helpers.standards import install_pingpong_manager
 from pycoinnet.helpers.standards import manage_connection_count
+from pycoinnet.helpers.standards import version_data_for_peer
 from pycoinnet.helpers.dnsbootstrap import new_queue_of_timestamp_peeraddress_tuples
 
 from pycoinnet.util.Queue import Queue
@@ -75,7 +75,7 @@ def block_processor(change_q, blockfetcher, inv_collector, config_dir, blockdir,
         block_q.put_nowait(item)
         if change_q.qsize() > 0:
             continue
-        while block_q.qsize() >= depth:
+        while block_q.qsize() > depth:
             # we have blocks that are buries and ready to write
             future, block_hash, block_index = yield from block_q.get()
             block = yield from asyncio.wait_for(future, timeout=None)
@@ -83,14 +83,14 @@ def block_processor(change_q, blockfetcher, inv_collector, config_dir, blockdir,
 
 
 @asyncio.coroutine
-def run_peer(peer, fast_forward_add_peer, blockfetcher, tx_mempool, inv_collector):
+def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, mempool, inv_collector):
     yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
-    version_parameters = default_msg_version_parameters(peer)
+    version_parameters = version_data_for_peer(peer)
     version_data = yield from initial_handshake(peer, version_parameters)
     last_block_index = version_data["last_block_index"]
     fast_forward_add_peer(peer, last_block_index)
-    blockfetcher.add_peer(peer, last_block_index)
-    tx_mempool.add_peer(peer)
+    blockfetcher.add_peer(peer, fetcher, last_block_index)
+    mempool.add_peer(peer)
     inv_collector.add_peer(peer)
 
 def block_chain_locker(block_chain):
@@ -105,9 +105,19 @@ def block_chain_locker(block_chain):
                 new_locked_length = total_length - (total_length % LOCKED_MULTIPLE) - LOCKED_MULTIPLE
                 block_chain.lock_to_index(new_locked_length)
             # wait for a change to blockchain
-            op, block_header, block_index = yield from change_q()
+            op, block_header, block_index = yield from change_q.get()
 
     asyncio.Task(_run(block_chain, block_chain.new_change_q()))
+
+@asyncio.coroutine
+def new_block_fetcher(inv_collector, block_chain):
+    item_q = inv_collector.new_inv_item_queue()
+    while True:
+        inv_item = yield from item_q.get()
+        if inv_item.item_type == ITEM_TYPE_BLOCK:
+            import pdb; pdb.set_trace()
+            block = yield from inv_collector.fetch(inv_item)
+            block_chain.add_headers([block])
 
 def main():
     parser = argparse.ArgumentParser(description="Watch Bitcoin network for new blocks.")
@@ -132,12 +142,12 @@ def main():
         queue_of_timestamp_peeraddress_tuples = new_queue_of_timestamp_peeraddress_tuples(MAINNET)
     else:
         queue_of_timestamp_peeraddress_tuples = Queue()
-        queue_of_timestamp_peeraddress_tuples.put_nowait((0, PeerAddress(1, "127.0.0.1", 28333)))
+        queue_of_timestamp_peeraddress_tuples.put_nowait((0, PeerAddress(1, "127.0.0.1", 8333)))
 
     args = parser.parse_args()
 
-    block_chain = BlockChain()
     block_chain_store = BlockChainStore(args.config_dir)
+    block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)
     change_q = block_chain.new_change_q()
 
     block_chain_locker(block_chain)
@@ -146,10 +156,7 @@ def main():
     blockfetcher = Blockfetcher()
 
     inv_collector = InvCollector()
-    tx_mempool = TxMempool(
-        inv_collector,
-        is_interested_f=lambda inv_item: inv_item.item_type == ITEM_TYPE_BLOCK
-    )
+    mempool = Mempool(inv_collector)
 
     asyncio.Task(
         block_processor(
@@ -157,11 +164,13 @@ def main():
             args.blockdir, args.depth, args.fast_forward))
     fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
 
+    asyncio.Task(new_block_fetcher(inv_collector, block_chain))
+
     def create_protocol_callback():
         peer = BitcoinPeerProtocol(MAINNET["MAGIC_HEADER"])
-        install_ping_manager(peer)
-        install_pong_manager(peer)
-        asyncio.Task(run_peer(peer, fast_forward_add_peer, blockfetcher, tx_mempool, inv_collector))
+        install_pingpong_manager(peer)
+        fetcher = Fetcher(peer)
+        asyncio.Task(run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, mempool, inv_collector))
         return peer
 
     connection_info_q = manage_connection_count(
