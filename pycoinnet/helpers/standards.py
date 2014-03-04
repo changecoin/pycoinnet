@@ -12,7 +12,7 @@ class BitcoinProtocolError(Exception):
     pass
 
 
-def manage_connection_count(address_queue, protocol_factory, connection_count=4):
+def manage_connection_count(host_port_queue, protocol_factory, connection_count=4):
     """
     address_queue: a queue of (host, port) tuples
     protocol_factory: the callback passed to EventLoop.create_connection
@@ -23,8 +23,7 @@ def manage_connection_count(address_queue, protocol_factory, connection_count=4)
     @asyncio.coroutine
     def run():
         while True:
-            timestamp, peer_addr = yield from address_queue.get()
-            host, port = peer_addr.host(), peer_addr.port
+            host, port = yield from host_port_queue.get()
             logging.debug("got %s:%d from connection pool", host, port)
             logging.info("connecting to %s:%d" % (host, port))
             try:

@@ -27,7 +27,7 @@ from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.helpers.standards import install_pingpong_manager
 from pycoinnet.helpers.standards import manage_connection_count
 from pycoinnet.helpers.standards import version_data_for_peer
-from pycoinnet.helpers.dnsbootstrap import new_queue_of_timestamp_peeraddress_tuples
+from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 
 from pycoinnet.util.Queue import Queue
 
@@ -44,9 +44,8 @@ def show_connection_info(connection_info_q):
 def write_block_to_disk(blockdir, block, block_index):
     p = os.path.join(blockdir, "block-%06d-%s.bin" % (block_index, block.id()))
     tmp_path = p + ".tmp"
-    f = open(tmp_path, "wb")
-    block.stream(f)
-    f.close()
+    with open(tmp_path, "wb") as f:
+        block.stream(f)
     os.rename(tmp_path, p)
 
 
@@ -139,10 +138,10 @@ def main():
                 '%(filename)s:%(lineno)d %(message)s'))
     logging.getLogger("asyncio").setLevel(logging.INFO)
     if 1:
-        queue_of_timestamp_peeraddress_tuples = new_queue_of_timestamp_peeraddress_tuples(MAINNET)
+        host_port_q = dns_bootstrap_host_port_q(MAINNET)
     else:
-        queue_of_timestamp_peeraddress_tuples = Queue()
-        queue_of_timestamp_peeraddress_tuples.put_nowait((0, PeerAddress(1, "127.0.0.1", 8333)))
+        host_port_q = Queue()
+        host_port_q.put_nowait(("127.0.0.1", 8333))
 
     args = parser.parse_args()
 
@@ -173,9 +172,7 @@ def main():
         asyncio.Task(run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, mempool, inv_collector))
         return peer
 
-    connection_info_q = manage_connection_count(
-        queue_of_timestamp_peeraddress_tuples,
-        create_protocol_callback, 8)
+    connection_info_q = manage_connection_count(host_port_q, create_protocol_callback, 8)
     asyncio.Task(show_connection_info(connection_info_q))
     asyncio.get_event_loop().run_forever()
 
