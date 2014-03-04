@@ -117,14 +117,20 @@ class InvCollector:
         #   if found, done
         #   if notfound or time out, get another peer
 
-        most_recent_fetcher = yield from _wait_for_timeout_and_peer(q)
-        timer_future = asyncio.Task(_wait_for_timeout_and_peer(q, initial_delay=peer_timeout))
+        most_recent_fetcher = None
 
         while True:
+            if most_recent_fetcher is None and q.qsize() > 0:
+                most_recent_fetcher = yield from _wait_for_timeout_and_peer(q)
+                timer_future = asyncio.Task(_wait_for_timeout_and_peer(q, initial_delay=peer_timeout))
+
+            futures = pending_fetchers.union(set([timer_future]))
+
             if most_recent_fetcher:
-                pending_fetchers.add(most_recent_fetcher)
-            futures = list(pending_fetchers.union(set([timer_future])))
-            done, pending_fetchers = yield from asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
+                futures.add(most_recent_fetcher)
+
+            done, pending_fetchers = \
+                yield from asyncio.wait(list(futures), return_when=asyncio.FIRST_COMPLETED)
 
             # is it time to try a new fetcher?
             if timer_future in done:
@@ -142,12 +148,11 @@ class InvCollector:
                     return r
                 # we got a "notfound" from this one
                 # queue up another peer
+                logging.debug("got a notfound, need to try a new peer for %s", inv_item)
                 timer_future.cancel()
                 pending_fetchers.discard(timer_future)
-                logging.debug("got a notfound, need to try a new peer for %s", inv_item)
                 most_recent_fetcher = None
                 timer_future = asyncio.Task(_wait_for_timeout_and_peer(q, initial_delay=0))
-                logging.debug("continuing")
                 # we have a new peer available as the result of timer_future
                 continue
 
