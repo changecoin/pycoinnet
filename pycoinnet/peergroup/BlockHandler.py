@@ -35,8 +35,8 @@ def _header_for_block(block):
 
 class BlockHandler:
     def __init__(self, inv_collector, block_chain, block_store,
-                 block_validator=lambda block: True,
-                 should_download_f=lambda block_hash, block_index: True):
+                 should_download_f=lambda block_hash, block_index: True,
+                 block_validator=lambda block: True):
         self.inv_collector = inv_collector
         self.block_chain = block_chain
         self.block_store = block_store
@@ -85,6 +85,8 @@ class BlockHandler:
             while True:
                 name, data = yield from next_message()
                 if name == 'getblocks':
+                    continue
+                    # TODO: get this working
                     block_hashes = _prep_block_hashes(data.get("hash_stop"))
                     if block_hashes:
                         peer.send_msg("headers", headers=block_hashes)

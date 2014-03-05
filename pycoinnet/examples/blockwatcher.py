@@ -19,6 +19,7 @@ from pycoinnet.peer.Fetcher import Fetcher
 
 from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
 from pycoinnet.peergroup.Blockfetcher import Blockfetcher
+from pycoinnet.peergroup.BlockHandler import BlockHandler
 from pycoinnet.peergroup.InvCollector import InvCollector
 
 from pycoinnet.helpers.networks import MAINNET
@@ -29,6 +30,7 @@ from pycoinnet.helpers.standards import version_data_for_peer
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 
 from pycoinnet.util.Queue import Queue
+from pycoinnet.util.TwoLevelDict import TwoLevelDict
 
 from pycoinnet.PeerAddress import PeerAddress
 
@@ -48,7 +50,7 @@ def write_block_to_disk(blockdir, block, block_index):
     os.rename(tmp_path, p)
 
 
-def block_processor(change_q, blockfetcher, inv_collector, config_dir, blockdir, depth, fast_forward):
+def block_processor(change_q, blockfetcher, config_dir, blockdir, depth, fast_forward):
     # load the last processed block index
     last_processed_block = 0
     # TODO: should load from disk
@@ -81,7 +83,7 @@ def block_processor(change_q, blockfetcher, inv_collector, config_dir, blockdir,
 
 
 @asyncio.coroutine
-def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector):
+def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector, blockhandler):
     yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
     version_parameters = version_data_for_peer(peer)
     version_data = yield from initial_handshake(peer, version_parameters)
@@ -89,6 +91,7 @@ def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector):
     fast_forward_add_peer(peer, last_block_index)
     blockfetcher.add_peer(peer, fetcher, last_block_index)
     inv_collector.add_peer(peer)
+    blockhandler.add_peer(peer)
 
 def block_chain_locker(block_chain):
     @asyncio.coroutine
@@ -151,12 +154,23 @@ def main():
     block_chain.add_nodes(block_chain_store.block_tuple_iterator())
 
     blockfetcher = Blockfetcher()
-
     inv_collector = InvCollector()
+
+    block_store = TwoLevelDict()
+
+    @asyncio.coroutine
+    def _rotate(block_store):
+        while True:
+            block_store.rotate()
+            yield from asyncio.sleep(1800)
+    asyncio.Task(_rotate(block_store))
+
+    blockhandler = BlockHandler(inv_collector, block_chain, block_store,
+        should_download_f=lambda block_hash, block_index: block_index >= args.fast_forward)
 
     asyncio.Task(
         block_processor(
-            change_q, blockfetcher, inv_collector, args.config_dir,
+            change_q, blockfetcher, args.config_dir,
             args.blockdir, args.depth, args.fast_forward))
     fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
 
@@ -166,7 +180,7 @@ def main():
         peer = BitcoinPeerProtocol(MAINNET["MAGIC_HEADER"])
         install_pingpong_manager(peer)
         fetcher = Fetcher(peer)
-        asyncio.Task(run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector))
+        asyncio.Task(run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector, blockhandler))
         return peer
 
     connection_info_q = manage_connection_count(host_port_q, create_protocol_callback, 8)
