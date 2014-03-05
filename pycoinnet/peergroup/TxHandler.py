@@ -20,6 +20,7 @@ import logging
 
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX
 
+
 class TxHandler:
     def __init__(self, inv_collector, tx_store, tx_validator=lambda tx: True):
         self.inv_collector = inv_collector

@@ -1,12 +1,20 @@
 """
-  - takes an InvCollector, BlockChain & BlockStore
-  - handle getheaders, getblocks, getdata (for blocks)
-  - watch BlockChain
-    - on new blocks added, check BlockStore & fetch them
-      - useful for fast forward
-      - allow BlockStore to determine what we want stored
-  - watch InvCollector
-    - upon inv, fetch block, call validator, then add to pool
+BlockHandler
+
+This class should be instantiated once per client.
+
+It takes an InvCollector, a BlockChain, and a BlockStore.
+
+It monitors both the BlockChain and the InvCollector
+
+When a new Block object is noted by the InvCollector, this object will
+fetch it, validate it, then store it in the BlockStore and tell the
+InvCollector to advertise it to other peers.
+
+When a new peer comes online, invoke add_peer.
+
+This object will then watch for getheader, getblock and getdata messages
+and handle them appropriately.
 """
 
 from pycoinnet.util.debug_help import asyncio
@@ -15,6 +23,8 @@ import logging
 
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK
 
+
+# TODO: move to pycoin
 def _header_for_block(block):
     from pycoin.block import BlockHeader
     f = io.BytesIO()
@@ -25,7 +35,8 @@ def _header_for_block(block):
 
 class BlockHandler:
     def __init__(self, inv_collector, block_chain, block_store,
-                 block_validator=lambda block: True, should_download_f=lambda block_hash, block_index: True):
+                 block_validator=lambda block: True,
+                 should_download_f=lambda block_hash, block_index: True):
         self.inv_collector = inv_collector
         self.block_chain = block_chain
         self.block_store = block_store
@@ -40,11 +51,12 @@ class BlockHandler:
         # TODO: implement
         def _download_block(block_hash, block_index):
             block = yield from self.inv_collector.fetch(InvItem(ITEM_TYPE_BLOCK, block_hash))
+            return block
         while True:
             add_or_remove, block_hash, block_index = yield from change_q.get()
             if add_or_remove != "add":
                 continue
-            block = block_store.get(block_hash)
+            block = self.block_store.get(block_hash)
             if block:
                 continue
             if should_download_f(block_hash, block_index):
@@ -79,6 +91,7 @@ class BlockHandler:
                 if name == 'getheaders':
                     headers = self._prep_headers(data.get("hash_stop"))
                     if headers:
+                        logging.debug("sending %d headers", len(headers))
                         peer.send_msg("headers", headers=headers)
                 if name == 'getdata':
                     inv_items = data["items"]
@@ -93,17 +106,20 @@ class BlockHandler:
                         else:
                             not_found.append(inv_item)
                     if not_found:
+                        logging.debug("could not find %d blocks", len(not_found))
                         peer.send_msg("notfound", items=not_found)
+                    logging.debug("sending %d blocks", len(blocks_found))
                     for block in blocks_found:
+                        logging.debug("sending block %s", block.id())
                         peer.send_msg("block", block=block)
 
-        next_message = peer.new_get_next_message_f(lambda name, data: name in ['getheaders', 'getblocks', 'getdata'])
+        next_message = peer.new_get_next_message_f(
+            lambda name, data: name in ['getheaders', 'getblocks', 'getdata'])
         asyncio.Task(_run_handle_get(next_message))
 
     def add_block(self, block):
         """
-        Add a block and advertise it to peers so it can
-        propogate throughout the network.
+        Add a block and advertise it to peers so it can propogate throughout the network.
         """
         the_hash = block.hash()
         if the_hash not in self.block_store:

@@ -1,7 +1,6 @@
 import asyncio
 import binascii
 import logging
-import os
 import struct
 import time
 import weakref
@@ -9,8 +8,6 @@ import weakref
 from pycoin import encoding
 
 from pycoinnet.message import parse_from_data, pack_from_data
-from pycoinnet.message import MESSAGE_STRUCTURES
-from pycoinnet.PeerAddress import PeerAddress
 from pycoinnet.util.Queue import Queue
 
 
@@ -57,11 +54,13 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         q = Queue(maxsize=maxsize)
         q.filter_f = filter_f
         self.message_queues.add(q)
+
         def get_next_message():
             msg_name, data = yield from q.get()
-            if msg_name == None:
+            if msg_name is None:
                 raise EOFError
             return msg_name, data
+
         if self._run_handle:
             if self._run_handle.done():
                 q.put_nowait((None, None))
