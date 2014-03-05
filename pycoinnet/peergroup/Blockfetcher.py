@@ -85,6 +85,7 @@ class Blockfetcher:
                 future.add_done_callback(make_cb(item[-1]))
                 futures.append(future)
             if len(futures) == 0:
+                yield from asyncio.sleep(10)
                 continue
             done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
             finish_time = time.time() - start_time

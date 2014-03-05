@@ -119,6 +119,15 @@ def new_block_fetcher(inv_collector, block_chain):
                 block = yield from inv_collector.fetch(inv_item)
                 block_chain.add_headers([block])
 
+LOG_FORMAT=('%(asctime)s [%(process)d] [%(levelname)s] '
+            '%(filename)s:%(lineno)d %(message)s')
+
+def log_file(logPath, level=logging.NOTSET):
+    new_log = logging.FileHandler(logPath)
+    new_log.setLevel(level)
+    new_log.setFormatter(logging.Formatter(LOG_FORMAT))
+    logging.getLogger().addHandler(new_log)
+
 def main():
     parser = argparse.ArgumentParser(description="Watch Bitcoin network for new blocks.")
     parser.add_argument('-c', "--config-dir", help='The directory where config files are stored.')
@@ -130,14 +139,13 @@ def main():
         '-d', "--depth", type=int,
         help="Minimum depth blocks must be buried before being dropped in blockdir", default=2
     )
+    parser.add_argument( '-l', "--log-file", help="Path to log file", default=None)
     parser.add_argument("blockdir", help='The directory where new blocks are dropped.')
 
     asyncio.tasks._DEBUG = True
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format=('%(asctime)s [%(process)d] [%(levelname)s] '
-                '%(filename)s:%(lineno)d %(message)s'))
+    logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
     logging.getLogger("asyncio").setLevel(logging.INFO)
+
     if 1:
         host_port_q = dns_bootstrap_host_port_q(MAINNET)
     else:
@@ -145,6 +153,9 @@ def main():
         host_port_q.put_nowait(("127.0.0.1", 8333))
 
     args = parser.parse_args()
+
+    if args.log_file:
+        log_file(args.log_file)
 
     block_chain_store = BlockChainStore(args.config_dir)
     block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)

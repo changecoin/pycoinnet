@@ -11,6 +11,7 @@ setup(
         "pycoinnet",
         "pycoinnet.helpers",
         "pycoinnet.peer",
+        "pycoinnet.peer.tests",
         "pycoinnet.peergroup",
         "pycoinnet.util",
     ],
