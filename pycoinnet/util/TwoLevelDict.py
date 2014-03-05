@@ -17,14 +17,17 @@ class TwoLevelDict(collections.abc.MutableMapping):
         return self.dict.__setitem__(key, v)
 
     def __getitem__(self, key):
-        v = self.old_dict.__getitem__(key)
-        if v:
+        try:
+            v = self.old_dict.__getitem__(key)
             self.dict[key] = v
+            del self.old_dict[key]
+        except KeyError:
+            pass
         return self.dict.__getitem__(key)
 
     def __delitem__(self, key):
         for d in (self.dict, self.old_dict):
-            if key in self.dict:
+            if key in d:
                 d.__delitem__(key)
 
     def __len__(self):
@@ -37,5 +40,5 @@ class TwoLevelDict(collections.abc.MutableMapping):
             yield i
 
     def rotate(self):
-        self.old_dict = dict
+        self.old_dict = self.dict
         self.dict = {}
