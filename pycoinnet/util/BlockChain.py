@@ -34,7 +34,7 @@ class BlockChain:
 
         self._locked_chain = []
 
-    def is_hash_known(the_hash):
+    def is_hash_known(self, the_hash):
         return the_hash in self.hash_to_index_lookup
 
     def length(self):
