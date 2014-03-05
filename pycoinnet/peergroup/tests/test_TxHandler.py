@@ -24,8 +24,6 @@ def test_TxHandler_simple():
         for peer in peer_list:
             inv_collector.add_peer(peer)
             tx_handler.add_peer(peer)
-        for peer in peer_list:
-            peer.send_msg("mempool")
         while len(tx_store) < 20:
             yield from asyncio.sleep(0.1)
         return tx_store
