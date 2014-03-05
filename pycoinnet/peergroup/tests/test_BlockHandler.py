@@ -1,5 +1,7 @@
 from pycoinnet.util.debug_help import asyncio
 
+from pycoinnet.helpers import standards
+
 from pycoinnet.peer.tests.helper import create_handshaked_peers, handshake_peers, make_blocks, MAGIC_HEADER, create_peers_tcp
 from pycoinnet.peergroup.InvCollector import InvCollector
 from pycoinnet.peergroup.BlockHandler import BlockHandler
@@ -158,6 +160,46 @@ def test_BlockHandler_tcp():
 
     assert block_chain_1.length() == len(BLOCK_LIST)
     assert block_chain_2.length() == len(BLOCK_LIST)
+
+
+def test_simple_getheader():
+    BLOCKS = make_blocks(20)
+    blockchain1 = BlockChain()
+    blockchain1.add_headers(BLOCKS)
+
+    block_store = dict((b.hash(), b) for b in BLOCKS)
+
+    peer1, peer2 = create_handshaked_peers()
+
+    block_store = {}
+    block_chain = BlockChain()
+    inv_collector = InvCollector()
+    block_handler = BlockHandler(inv_collector, block_chain, block_store)
+
+    for block in BLOCKS:
+        inv_collector.advertise_item(InvItem(ITEM_TYPE_BLOCK, block.hash()))
+        block_store[block.hash()] = block
+    block_chain.add_headers(BLOCKS)
+
+    inv_collector.add_peer(peer1)
+    block_handler.add_peer(peer1)
+
+    @asyncio.coroutine
+    def run_peer2():
+        r = []
+        headers = yield from standards.get_headers_hashes(peer2, after_block_hash=b'\0' * 32)
+        r.append(headers)
+        return r
+
+    f2 = asyncio.Task(run_peer2())
+
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([f2]))
+
+    r = f2.result()
+    assert len(r) == 1
+    assert [b.hash() for b in r[0]] == [b.hash() for b in BLOCKS]
+
+
 
 import logging
 asyncio.tasks._DEBUG = True
