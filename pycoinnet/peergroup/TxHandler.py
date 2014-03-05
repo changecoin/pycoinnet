@@ -1,17 +1,31 @@
+"""
+TxHandler
+
+This class should be instantiated once per client.
+
+It takes an InvCollector and a TxStore, and an optional Tx validator.
+
+When a new Tx object is noted by the InvCollector, this object will
+fetch it, validate it, then store it in the TxStore and tell the
+InvCollector to advertise it to other peers.
+
+When a new peer comes online, invoke add_peer.
+
+This object will then watch for mempool and getdata messages
+and handle them appropriately.
+"""
+
 import asyncio
 import logging
 
-from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK, ITEM_TYPE_TX
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX
 
-
-class Mempool:
-    def __init__(self, inv_collector, is_interested_f=lambda inv_item: True):
+class TxHandler:
+    def __init__(self, inv_collector, tx_store, tx_validator=lambda tx: True):
         self.inv_collector = inv_collector
         self.q = inv_collector.new_inv_item_queue()
-        self.tx_pool = {}
-        self.block_pool = {}
-        self.is_interested_f = is_interested_f
-        asyncio.Task(self._run())
+        self.tx_store = tx_store
+        asyncio.Task(self._run(tx_validator))
 
     def add_peer(self, peer):
         """
@@ -22,7 +36,7 @@ class Mempool:
         def _run_mempool(next_message):
             try:
                 name, data = yield from next_message()
-                inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in self.tx_pool.values()]
+                inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in self.tx_store.values()]
                 logging.debug("sending inv of %d item(s) in response to mempool", len(inv_items))
                 if len(inv_items) > 0:
                     peer.send_msg("inv", items=inv_items)
@@ -37,22 +51,22 @@ class Mempool:
                 inv_items = data["items"]
                 not_found = []
                 txs_found = []
-                blocks_found = []
                 for inv_item in inv_items:
-                    pool, the_list = (self.tx_pool, txs_found) if inv_item.item_type == ITEM_TYPE_TX else (self.block_pool, blocks_found)
-                    if inv_item.data in pool:
-                        the_list.append(pool[inv_item.data])
+                    if inv_item.item_type != ITEM_TYPE_TX:
+                        continue
+                    tx = self.tx_store.get(inv_item.data)
+                    if tx:
+                        txs_found.append(tx)
                     else:
                         not_found.append(inv_item)
                 if not_found:
                     peer.send_msg("notfound", items=not_found)
                 for tx in txs_found:
                     peer.send_msg("tx", tx=tx)
-                for block in blocks_found:
-                    peer.send_msg("block", block=block)
 
         asyncio.Task(_run_mempool(peer.new_get_next_message_f(lambda name, data: name == 'mempool')))
         asyncio.Task(_run_getdata(peer.new_get_next_message_f(lambda name, data: name == 'getdata')))
+        peer.send_msg("mempool")
 
     def add_tx(self, tx):
         """
@@ -60,28 +74,23 @@ class Mempool:
         propogate throughout the network.
         """
         the_hash = tx.hash()
-        if the_hash not in self.tx_pool:
-            self.tx_pool[the_hash] = tx
+        if the_hash not in self.tx_store:
+            self.tx_store[the_hash] = tx
             self.inv_collector.advertise_item(InvItem(ITEM_TYPE_TX, the_hash))
 
-    def add_block(self, block):
-        the_hash = block.hash()
-        if the_hash not in self.block_pool:
-            self.block_pool[the_hash] = block
-            self.inv_collector.advertise_item(InvItem(ITEM_TYPE_BLOCK, the_hash))
-
     @asyncio.coroutine
-    def _run(self):
+    def _run(self, tx_validator):
         @asyncio.coroutine
         def fetch_item(inv_item):
-            item = yield from self.inv_collector.fetch(inv_item)
-            if item:
-                if inv_item.item_type == ITEM_TYPE_TX:
-                    self.add_tx(item)
-                else:
-                    self.add_block(item)
+            tx = yield from self.inv_collector.fetch(inv_item)
+            if tx and tx_validator(tx):
+                self.tx_store[tx.hash()] = tx
+                self.inv_collector.advertise_item(inv_item)
 
         while True:
             inv_item = yield from self.q.get()
-            if self.is_interested_f(inv_item):
-                asyncio.Task(fetch_item(inv_item))
+            if inv_item.item_type != ITEM_TYPE_TX:
+                continue
+            tx = self.tx_store.get(inv_item.data)
+            if not tx:
+                tx = asyncio.Task(fetch_item(inv_item))
