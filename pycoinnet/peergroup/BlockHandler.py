@@ -16,6 +16,7 @@ import logging
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK
 
 def _header_for_block(block):
+    from pycoin.block import BlockHeader
     f = io.BytesIO()
     block.stream(f)
     f.seek(0)
@@ -26,15 +27,17 @@ class BlockHandler:
     def __init__(self, inv_collector, block_chain, block_store,
                  block_validator=lambda block: True, should_download_f=lambda block_hash, block_index: True):
         self.inv_collector = inv_collector
+        self.block_chain = block_chain
         self.block_store = block_store
         self.q = inv_collector.new_inv_item_queue()
         asyncio.Task(self._watch_invcollector(block_validator))
-        #asyncio.Task(self._watch_blockchain(block_chain.new_change_q(), should_download_f))
+        #asyncio.Task(self._watch_block_chain(block_chain.new_change_q(), should_download_f))
 
     @asyncio.coroutine
-    def _watch_blockchain(self, change_q, should_download_f):
+    def _watch_block_chain(self, change_q, should_download_f):
         # this is only useful when fast-forwarding
         # we will skip it for now
+        # TODO: implement
         def _download_block(block_hash, block_index):
             block = yield from self.inv_collector.fetch(InvItem(ITEM_TYPE_BLOCK, block_hash))
         while True:
@@ -50,11 +53,11 @@ class BlockHandler:
     def _prep_headers(self, hash_stop):
         headers = []
         if hash_stop == b'\0' * 32:
-            for i in range(min(2000, self.blockchain.length())):
-                h = self.blockchain.hash_for_index(i)
+            for i in range(min(2000, self.block_chain.length())):
+                h = self.block_chain.hash_for_index(i)
                 if h is None:
                     break
-                block = self.block_lookup.get(h)
+                block = self.block_store.get(h)
                 if block is None:
                     break
                 headers.append((_header_for_block(block), 0))
@@ -70,11 +73,11 @@ class BlockHandler:
             while True:
                 name, data = yield from next_message()
                 if name == 'getblocks':
-                    block_hashes = _prep_block_hashes(blockchain, block_lookup, data.get("hash_stop"))
+                    block_hashes = _prep_block_hashes(data.get("hash_stop"))
                     if block_hashes:
                         peer.send_msg("headers", headers=block_hashes)
                 if name == 'getheaders':
-                    headers = _prep_headers(blockchain, block_lookup, data.get("hash_stop"))
+                    headers = self._prep_headers(data.get("hash_stop"))
                     if headers:
                         peer.send_msg("headers", headers=headers)
                 if name == 'getdata':
@@ -96,6 +99,16 @@ class BlockHandler:
 
         next_message = peer.new_get_next_message_f(lambda name, data: name in ['getheaders', 'getblocks', 'getdata'])
         asyncio.Task(_run_handle_get(next_message))
+
+    def add_block(self, block):
+        """
+        Add a block and advertise it to peers so it can
+        propogate throughout the network.
+        """
+        the_hash = block.hash()
+        if the_hash not in self.block_store:
+            self.block_store[the_hash] = block
+            self.inv_collector.advertise_item(InvItem(ITEM_TYPE_BLOCK, the_hash))
 
     @asyncio.coroutine
     def _watch_invcollector(self, block_validator):

@@ -9,7 +9,6 @@ from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK
 from pycoinnet.util.BlockChain import BlockChain
 from pycoinnet.peergroup.Blockfetcher import Blockfetcher
 from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
-#from pycoinnet.peer.HandlerForGet import install_get_handler
 
 
 def test_BlockHandler_simple():
@@ -47,67 +46,62 @@ def test_BlockHandler_simple():
         assert len(r) == 2
 
 
-def make_add_peer(fast_forward_add_peer, blockfetcher, txhandler, inv_collector, block_chain, block_lookup):
+def make_add_peer(fast_forward_add_peer, blockfetcher, block_handler, inv_collector, block_chain, block_store):
     def add_peer(peer, other_last_block_index):
         fast_forward_add_peer(peer, other_last_block_index)
         blockfetcher.add_peer(peer, inv_collector.fetcher_for_peer(peer), other_last_block_index)
-        txhandler.add_peer(peer)
+        block_handler.add_peer(peer)
         inv_collector.add_peer(peer)
-        install_get_handler(peer, block_chain, block_lookup)
     return add_peer
 
 
 @asyncio.coroutine
-def block_getter(inv_q, inv_collector, txhandler, block_chain, block_lookup):
+def block_getter(inv_q, inv_collector, block_handler, block_chain, block_store):
     @asyncio.coroutine
     def fetch_block(inv_item):
         block = yield from inv_collector.fetch(inv_item)
         if block:
             logging.debug("fetched %s", block)
             block_chain.add_headers([block])
-            txhandler.add_block(block)
-            block_lookup[block.hash()] = block
+            block_handler.add_block(block)
+            block_store[block.hash()] = block
     while True:
         inv_item = yield from inv_q.get()
         if inv_item is None:
             break
         if inv_item.item_type != ITEM_TYPE_BLOCK:
             continue
-        if inv_item.data in block_lookup:
+        if inv_item.data in block_store:
             continue
         asyncio.Task(fetch_block(inv_item))
 
 
 def items_for_client(initial_blocks=[]):
-    block_lookup = dict((b.hash(), b) for b in initial_blocks)
-
-    def is_interested_f(inv_item):
-        if inv_item.item_type == ITEM_TYPE_BLOCK:
-            return inv_item.data not in block_lookup
-
+    block_store = {}
     block_chain = BlockChain()
     blockfetcher = Blockfetcher()
     inv_collector = InvCollector()
-    txhandler = TxHandler(inv_collector, is_interested_f=lambda inv_item: False)
+    block_handler = BlockHandler(inv_collector, block_chain, block_store)
     fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
 
     for block in initial_blocks:
-        txhandler.add_block(block)
+        inv_collector.advertise_item(InvItem(ITEM_TYPE_BLOCK, block.hash()))
+        block_store[block.hash()] = block
     block_chain.add_headers(initial_blocks)
 
     inv_q = inv_collector.new_inv_item_queue()
-    asyncio.Task(block_getter(inv_q, inv_collector, txhandler, block_chain, block_lookup))
-    ap = make_add_peer(fast_forward_add_peer, blockfetcher, txhandler, inv_collector, block_chain, block_lookup)
-    return txhandler, block_chain, block_lookup, ap
+    asyncio.Task(block_getter(inv_q, inv_collector, block_handler, block_chain, block_store))
+    ap = make_add_peer(fast_forward_add_peer, blockfetcher, block_handler, inv_collector, block_chain, block_store)
+    return block_handler, block_chain, block_store, ap
 
 
-def ztest_BlockHandler_tcp():
+def test_BlockHandler_tcp():
     BLOCK_LIST = make_blocks(32)
     BL1 = BLOCK_LIST[:-8]
     BL2 = BLOCK_LIST[-8:]
 
-    txhandler_1, block_chain_1, block_lookup_1, add_peer_1 = items_for_client(BL1)
-    txhandler_2, block_chain_2, block_lookup_2, add_peer_2 = items_for_client()
+    block_handler_1, block_chain_1, block_store_1, add_peer_1 = items_for_client(BL1)
+    block_handler_2, block_chain_2, block_store_2, add_peer_2 = items_for_client()
 
     peer1, peer2 = create_peers_tcp()
 
@@ -138,15 +132,6 @@ def ztest_BlockHandler_tcp():
 
     r = wait_for_change_q(change_q_2, len(BL1))
 
-    def show_msgs():
-        print('-'*60)
-        for m in peer1.msg_list:
-            print(m)
-        print('-'*60)
-        for m in peer2.msg_list:
-            print(m)
-        print('-'*60)
-
     assert len(r) == len(BL1)
     assert r == [('add', b.hash(), idx) for idx, b in enumerate(BL1)]
 
@@ -156,30 +141,17 @@ def ztest_BlockHandler_tcp():
     assert block_chain_2.length() == len(BL1)
 
     for block in BL2:
-        txhandler_1.add_block(block)
-        block_lookup_1[block.hash()] = block
+        block_handler_1.add_block(block)
+        block_store_1[block.hash()] = block
     block_chain_1.add_headers(BL2)
 
     assert block_chain_1.length() == len(BLOCK_LIST)
     assert block_chain_2.length() == len(BL1)
 
-    def wait_for_change_q(change_q, count):
-        @asyncio.coroutine
-        def async_tests(change_q, count):
-            r = []
-            while len(r) < count:
-                v = yield from change_q.get()
-                r.append(v)
-            return r
-        try:
-            r = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(async_tests(change_q, count), timeout=5))
-        except asyncio.TimeoutError:
-            r = []
-        return r
-
     r = wait_for_change_q(change_q_2, len(BL2))
 
-    show_msgs()
+    peer1.dump()
+    peer2.dump()
 
     assert len(r) == len(BL2)
     assert r == [('add', b.hash(), idx+len(BL1)) for idx, b in enumerate(BL2)]
