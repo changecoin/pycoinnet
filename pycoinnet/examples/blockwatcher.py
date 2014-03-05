@@ -20,7 +20,6 @@ from pycoinnet.peer.Fetcher import Fetcher
 from pycoinnet.peergroup.fast_forwarder import fast_forwarder_add_peer_f
 from pycoinnet.peergroup.Blockfetcher import Blockfetcher
 from pycoinnet.peergroup.InvCollector import InvCollector
-from pycoinnet.peergroup.Mempool import Mempool
 
 from pycoinnet.helpers.networks import MAINNET
 from pycoinnet.helpers.standards import initial_handshake
@@ -82,14 +81,13 @@ def block_processor(change_q, blockfetcher, inv_collector, config_dir, blockdir,
 
 
 @asyncio.coroutine
-def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, mempool, inv_collector):
+def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector):
     yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
     version_parameters = version_data_for_peer(peer)
     version_data = yield from initial_handshake(peer, version_parameters)
     last_block_index = version_data["last_block_index"]
     fast_forward_add_peer(peer, last_block_index)
     blockfetcher.add_peer(peer, fetcher, last_block_index)
-    mempool.add_peer(peer)
     inv_collector.add_peer(peer)
 
 def block_chain_locker(block_chain):
@@ -114,9 +112,9 @@ def new_block_fetcher(inv_collector, block_chain):
     while True:
         inv_item = yield from item_q.get()
         if inv_item.item_type == ITEM_TYPE_BLOCK:
-            import pdb; pdb.set_trace()
-            block = yield from inv_collector.fetch(inv_item)
-            block_chain.add_headers([block])
+            if not block_chain.is_hash_known(inv_item.data):
+                block = yield from inv_collector.fetch(inv_item)
+                block_chain.add_headers([block])
 
 def main():
     parser = argparse.ArgumentParser(description="Watch Bitcoin network for new blocks.")
@@ -155,7 +153,6 @@ def main():
     blockfetcher = Blockfetcher()
 
     inv_collector = InvCollector()
-    mempool = Mempool(inv_collector)
 
     asyncio.Task(
         block_processor(
@@ -169,7 +166,7 @@ def main():
         peer = BitcoinPeerProtocol(MAINNET["MAGIC_HEADER"])
         install_pingpong_manager(peer)
         fetcher = Fetcher(peer)
-        asyncio.Task(run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, mempool, inv_collector))
+        asyncio.Task(run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector))
         return peer
 
     connection_info_q = manage_connection_count(host_port_q, create_protocol_callback, 8)
