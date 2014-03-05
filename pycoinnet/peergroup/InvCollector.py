@@ -165,6 +165,17 @@ class InvCollector:
                     return r
             # otherwise, we just continue trying, using the new pending_fetchers
 
+    def fetch_validate_store_item_async(self, inv_item, item_store, validator_f):
+        def _run():
+            item = item_store.get(inv_item.data)
+            if item:
+                return
+            item = yield from self.fetch(inv_item)
+            if item and validator_f(item):
+                item_store[item.hash()] = item
+                self.advertise_item(inv_item)
+        return asyncio.Task(_run())
+
     def advertise_item(self, inv_item):
         """
         Advertise an item to peers. Note that peers who have mentioned they have

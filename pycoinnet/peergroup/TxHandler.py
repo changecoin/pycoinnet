@@ -80,17 +80,8 @@ class TxHandler:
 
     @asyncio.coroutine
     def _run(self, tx_validator):
-        @asyncio.coroutine
-        def fetch_item(inv_item):
-            tx = yield from self.inv_collector.fetch(inv_item)
-            if tx and tx_validator(tx):
-                self.tx_store[tx.hash()] = tx
-                self.inv_collector.advertise_item(inv_item)
-
         while True:
             inv_item = yield from self.q.get()
             if inv_item.item_type != ITEM_TYPE_TX:
                 continue
-            tx = self.tx_store.get(inv_item.data)
-            if not tx:
-                tx = asyncio.Task(fetch_item(inv_item))
+            self.inv_collector.fetch_validate_store_item_async(inv_item, self.tx_store, tx_validator)
