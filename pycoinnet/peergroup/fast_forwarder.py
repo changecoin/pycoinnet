@@ -2,8 +2,6 @@ import asyncio
 import logging
 import time
 
-from asyncio import PriorityQueue
-
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_BLOCK
 from pycoinnet.helpers.standards import get_headers_hashes
 
@@ -15,7 +13,7 @@ def fast_forwarder_add_peer_f(blockchain):
     which accepts a BitcoinPeerProtocol peer and the last_block_index
     as reported in the initial handshake.
     """
-    peer_queue = PriorityQueue()
+    peer_queue = asyncio.PriorityQueue()
 
     @asyncio.coroutine
     def _fetch_missing(peer, blockchain):
