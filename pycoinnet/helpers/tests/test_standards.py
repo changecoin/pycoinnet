@@ -103,12 +103,14 @@ def test_missing_pong_disconnect():
 
     ## make sure peer1 is disconnected
     got_eof = False
-    try:
-        asyncio.get_event_loop().run_until_complete(asyncio.wait(next_message(), timeout=0.2))
-    except EOFError:
-        got_eof = True
+    def want_eof():
+        try:
+            yield from next_message()
+        except EOFError:
+            nonlocal got_eof
+            got_eof = True
+    asyncio.get_event_loop().run_until_complete(asyncio.wait([want_eof()], timeout=0.2))
     assert got_eof
-
 
 def test_get_date_address_tuples():
     peer1, peer2 = create_peers()
