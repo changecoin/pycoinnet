@@ -73,7 +73,7 @@ class Blockfetcher:
             futures = []
             for item in items_to_try:
                 if item[-1].done():
-                    break
+                    continue
                 future = asyncio.Task(fetcher.fetch(item[1]))
 
                 def make_cb(the_future):
@@ -85,6 +85,7 @@ class Blockfetcher:
                 future.add_done_callback(make_cb(item[-1]))
                 futures.append(future)
             if len(futures) == 0:
+                logging.debug("no fetchable blocks, sleeping")
                 yield from asyncio.sleep(10)
                 continue
             done, pending = yield from asyncio.wait(futures, timeout=loop_timeout)
