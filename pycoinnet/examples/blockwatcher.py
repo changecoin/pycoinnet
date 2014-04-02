@@ -162,7 +162,7 @@ def main():
         host_port_q = dns_bootstrap_host_port_q(MAINNET)
     else:
         host_port_q = Queue()
-        host_port_q.put_nowait(("127.0.0.1", 8333))
+        host_port_q.put_nowait(["127.0.0.1", 8333])
 
     args = parser.parse_args()
 

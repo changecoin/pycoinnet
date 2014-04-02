@@ -72,7 +72,7 @@ def new_queue_of_timestamp_peeraddress_tuples(network_info, timestamp_peeraddres
 
                 logging.debug("got addresses from %s", peer_name)
                 for da in date_address_tuples:
-                    timestamp_peeraddress_tuple_queue.put_nowait((-da[0], da[1]))
+                    timestamp_peeraddress_tuple_queue.put_nowait([-da[0], da[1]])
                 logging.debug("closing connection to %s", peer_name)
                 transport.close()
             except Exception:

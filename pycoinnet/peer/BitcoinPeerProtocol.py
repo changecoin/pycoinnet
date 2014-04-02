@@ -47,7 +47,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
                     message_name, data = None, None
                 for q in self.message_queues:
                     if q.filter_f(message_name, data):
-                        q.put_nowait((message_name, data))
+                        q.put_nowait([message_name, data])
                 if message_name is None:
                     break
 
@@ -63,7 +63,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
 
         if self._run_handle:
             if self._run_handle.done():
-                q.put_nowait((None, None))
+                q.put_nowait([None, None])
         else:
             self._run_handle = asyncio.Task(run(self))
         return get_next_message
