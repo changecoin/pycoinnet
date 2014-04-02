@@ -49,14 +49,26 @@ def write_block_to_disk(blockdir, block, block_index):
         block.stream(f)
     os.rename(tmp_path, p)
 
+def update_last_processed_block(config_dir, last_processed_block):
+    last_processed_block_path = os.path.join(config_dir, "last_processed_block")
+    try:
+        with open(last_processed_block_path, "w") as f:
+            f.write("%d\n" % last_processed_block)
+            f.close()
+    except Exception:
+        logging.exception("problem writing %s", last_processed_block_path)
 
 def block_processor(change_q, blockfetcher, config_dir, blockdir, depth, fast_forward):
-    # load the last processed block index
-    last_processed_block = 0
-    # TODO: should load from disk
-    # HACK. We should go to disk to cache this
+    last_processed_block_path = os.path.join(config_dir, "last_processed_block")
+    try:
+        with open(last_processed_block_path) as f:
+            last_processed_block = int(f.readline()[:-1])
+    except Exception:
+        logging.exception("problem getting last processed block, using 0")
+        last_processed_block = 0
     block_q = Queue()
     last_processed_block = max(last_processed_block, fast_forward)
+    update_last_processed_block(config_dir, last_processed_block)
     while True:
         add_remove, block_hash, block_index = yield from change_q.get()
         if add_remove == "remove":
@@ -69,7 +81,7 @@ def block_processor(change_q, blockfetcher, config_dir, blockdir, depth, fast_fo
         if add_remove != "add":
             logging.error("something weird from change_q")
             continue
-        if block_index < fast_forward:
+        if block_index < last_processed_block:
             continue
         item = (blockfetcher.get_block_future(block_hash, block_index), block_hash, block_index)
         block_q.put_nowait(item)
@@ -80,7 +92,7 @@ def block_processor(change_q, blockfetcher, config_dir, blockdir, depth, fast_fo
             future, block_hash, block_index = yield from block_q.get()
             block = yield from asyncio.wait_for(future, timeout=None)
             write_block_to_disk(blockdir, block, block_index)
-
+            update_last_processed_block(config_dir, block_index)
 
 @asyncio.coroutine
 def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector, blockhandler):
