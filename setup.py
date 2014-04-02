@@ -15,6 +15,11 @@ setup(
         "pycoinnet.peergroup",
         "pycoinnet.util",
     ],
+    entry_points = { 'console_scripts':
+        [
+            'blockwatcher = pycoinnet/examples/blockwatcher.py:main',
+        ]
+    },
     author="Richard Kiss",
     author_email="him@richardkiss.com",
     url="https://github.com/richardkiss/pycoinnet",
