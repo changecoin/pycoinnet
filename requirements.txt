@@ -1,2 +1,1 @@
-asyncio==0.4.1
 pycoin==0.26
