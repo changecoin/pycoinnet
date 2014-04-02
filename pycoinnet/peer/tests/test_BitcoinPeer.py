@@ -38,16 +38,19 @@ def test_BitcoinPeerProtocol_read():
 
     @asyncio.coroutine
     def async_test():
+        t = []
         name, data = yield from next_message()
-        assert name == 'version'
-        assert data == VERSION_MSG
+        t.append((name, data))
         name, data = yield from next_message()
-        assert name == 'verack'
-        assert data == {}
+        t.append((name, data))
+        return t
 
     peer.data_received(VERSION_MSG_BIN)
     peer.data_received(VERACK_MSG_BIN)
-    asyncio.get_event_loop().run_until_complete(async_test())
+    t = asyncio.get_event_loop().run_until_complete(async_test())
+    assert len(t) == 2
+    assert t[0] == ('version', VERSION_MSG)
+    assert t[1] == ('verack', {})
 
 def test_BitcoinPeerProtocol_multiplex():
     peer = BitcoinPeerProtocol(MAGIC_HEADER)
@@ -92,6 +95,7 @@ def test_BitcoinPeerProtocol():
         message_name, data = yield from next_message()
         assert message_name == 'getaddr'
         assert data == {}
+        return True
 
     peer1 = BitcoinPeerProtocol(MAGIC_HEADER)
     peer2 = BitcoinPeerProtocol(MAGIC_HEADER)
@@ -106,7 +110,9 @@ def test_BitcoinPeerProtocol():
     f1 = asyncio.Task(do_test(peer1, VERSION_MSG, VERSION_MSG_2))
     f2 = asyncio.Task(do_test(peer2, VERSION_MSG_2, VERSION_MSG))
 
-    asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
+    done, pending = asyncio.get_event_loop().run_until_complete(asyncio.wait([f1, f2]))
+    for f in done:
+        assert f.result() == True
 
 def test_queue_gc():
     # create a peer
