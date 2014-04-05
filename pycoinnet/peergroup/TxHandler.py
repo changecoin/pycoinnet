@@ -26,25 +26,13 @@ class TxHandler:
         self.inv_collector = inv_collector
         self.q = inv_collector.new_inv_item_queue()
         self.tx_store = tx_store
-        asyncio.Task(self._run(tx_validator))
+        self._validator_handle = asyncio.Task(self._run(tx_validator))
 
     def add_peer(self, peer):
         """
         Call this method when a peer comes online and you want to keep its mempool
         in sync with this mempool.
         """
-        @asyncio.coroutine
-        def _run_mempool(next_message):
-            try:
-                name, data = yield from next_message()
-                inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in self.tx_store.values()]
-                logging.debug("sending inv of %d item(s) in response to mempool", len(inv_items))
-                if len(inv_items) > 0:
-                    peer.send_msg("inv", items=inv_items)
-                # then we exit. We don't need to handle this message more than once.
-            except EOFError:
-                pass
-
         @asyncio.coroutine
         def _run_getdata(next_message):
             while True:
@@ -65,8 +53,22 @@ class TxHandler:
                 for tx in txs_found:
                     peer.send_msg("tx", tx=tx)
 
-        asyncio.Task(_run_mempool(peer.new_get_next_message_f(lambda name, data: name == 'mempool')))
-        asyncio.Task(_run_getdata(peer.new_get_next_message_f(lambda name, data: name == 'getdata')))
+        @asyncio.coroutine
+        def _run_mempool(next_message, getdata_task):
+            try:
+                name, data = yield from next_message()
+                inv_items = [InvItem(ITEM_TYPE_TX, tx.hash()) for tx in self.tx_store.values()]
+                logging.debug("sending inv of %d item(s) in response to mempool", len(inv_items))
+                if len(inv_items) > 0:
+                    peer.send_msg("inv", items=inv_items)
+                # then we exit. We don't need to handle this message more than once.
+            except EOFError:
+                getdata_task.cancel()
+
+        next_getdata = peer.new_get_next_message_f(lambda name, data: name == 'getdata')
+        getdata_task = asyncio.Task(_run_getdata(next_getdata))
+        next_mempool = peer.new_get_next_message_f(lambda name, data: name == 'mempool')
+        asyncio.Task(_run_mempool(next_mempool, getdata_task))
         peer.send_msg("mempool")
 
     def add_tx(self, tx):

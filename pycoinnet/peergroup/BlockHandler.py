@@ -117,7 +117,8 @@ class BlockHandler:
 
         next_message = peer.new_get_next_message_f(
             lambda name, data: name in ['getheaders', 'getblocks', 'getdata'])
-        asyncio.Task(_run_handle_get(next_message))
+        f = asyncio.Task(_run_handle_get(next_message))
+        return f
 
     def add_block(self, block):
         """
