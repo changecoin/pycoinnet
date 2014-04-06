@@ -92,8 +92,8 @@ def items_for_client(initial_blocks=[]):
     block_chain.add_headers(initial_blocks)
 
     inv_q = inv_collector.new_inv_item_queue()
-    asyncio.Task(block_getter(inv_q, inv_collector, block_handler, block_chain, block_store))
     ap = make_add_peer(fast_forward_add_peer, blockfetcher, block_handler, inv_collector, block_chain, block_store)
+    ap.block_getter_task = asyncio.Task(block_getter(inv_q, inv_collector, block_handler, block_chain, block_store))
     return block_handler, block_chain, block_store, ap
 
 
