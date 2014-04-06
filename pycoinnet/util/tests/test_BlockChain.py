@@ -32,7 +32,7 @@ def test_basic():
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[:5])
-    assert ops == [["add", i, i] for i in range(5)]
+    assert ops == [("add", i, i) for i in range(5)]
     assert BC.parent_hash == parent_for_0
     assert longest_block_chain(BC) == list(range(5))
     assert BC.length() == 5
@@ -45,7 +45,7 @@ def test_basic():
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[:7])
-    assert ops == [["add", i, i] for i in range(5,7)]
+    assert ops == [("add", i, i) for i in range(5,7)]
     assert BC.parent_hash == parent_for_0
     assert longest_block_chain(BC) == list(range(7))
     assert BC.length() == 7
@@ -72,7 +72,7 @@ def test_basic():
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[7:10])
-    assert ops == [["add", i, i] for i in range(7,14)]
+    assert ops == [("add", i, i) for i in range(7,14)]
     assert longest_block_chain(BC) == list(range(14))
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
     assert BC.parent_hash == parent_for_0
@@ -98,7 +98,7 @@ def test_basic():
     assert BC.index_for_hash(-1) is None
 
     ops = BC.add_nodes(ITEMS[14:90])
-    assert ops == [["add", i, i] for i in range(14,100)]
+    assert ops == [("add", i, i) for i in range(14,100)]
     assert longest_block_chain(BC) == list(range(100))
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
     assert BC.parent_hash == parent_for_0
@@ -132,15 +132,15 @@ def test_fork():
 
     # send them all except 302
     ops = BC.add_nodes((ITEMS[i] for i in ITEMS.keys() if i != 302))
-    assert ops == [["add", i, i] for i in range(7)]
+    assert ops == [("add", i, i) for i in range(7)]
     assert set(BC.chain_finder.missing_parents()) == set([parent_for_0, 302])
 
     # now send 302
     ops = BC.add_nodes([ITEMS[302]])
 
     # we should see a change
-    expected = [["remove", i, i] for i in range(6, 3, -1)]
-    expected += [["add", i, i+4-301] for i in range(301,306)]
+    expected = [("remove", i, i) for i in range(6, 3, -1)]
+    expected += [("add", i, i+4-301) for i in range(301,306)]
     assert ops == expected
     assert set(BC.chain_finder.missing_parents()) == set([parent_for_0])
 
@@ -156,7 +156,7 @@ def test_large():
     assert set(BC.chain_finder.missing_parents()) == set()
 
     ops = BC.add_nodes(ITEMS)
-    assert ops == [["add", i, i] for i in range(SIZE)]
+    assert ops == [("add", i, i) for i in range(SIZE)]
     assert longest_block_chain(BC) == list(range(SIZE))
     assert set(BC.chain_finder.missing_parents()) == {parent_for_0}
     assert BC.parent_hash == parent_for_0
@@ -187,7 +187,7 @@ def test_chain_locking():
         assert BC.length() == start
         assert BC.locked_length() == lock_start
         ops = BC.add_nodes(ITEMS[start:end])
-        assert ops == [["add", i, i] for i in range(start, end)]
+        assert ops == [("add", i, i) for i in range(start, end)]
         assert longest_locked_block_chain(BC) == list(range(lock_start, end))
         assert set(BC.chain_finder.missing_parents()) == {expected_parent}
         assert BC.parent_hash == expected_parent
