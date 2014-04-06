@@ -51,7 +51,7 @@ def run():
         peer = BitcoinPeerProtocol(MAINNET_MAGIC_HEADER)
         install_ping_manager(peer)
         install_pong_manager(peer)
-        asyncio.Task(run_peer(peer, fast_forward_add_peer))
+        peer.add_task(run_peer(peer, fast_forward_add_peer))
         return peer
 
     connect_q = manage_connection_count(ADDRESS_QUEUE, create_protocol_callback)
