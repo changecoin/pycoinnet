@@ -78,7 +78,8 @@ def new_queue_of_timestamp_peeraddress_tuples(network_info, timestamp_peeraddres
             except Exception:
                 logging.exception("failed during connect to %s", peer_name)
 
-    futures = [asyncio.Task(loop_connect_to_superpeer(superpeer_ip_queue)) for i in range(30)]
+    timestamp_peeraddress_tuple_queue.tasks = [
+        asyncio.Task(loop_connect_to_superpeer(superpeer_ip_queue)) for i in range(30)]
 
     return timestamp_peeraddress_tuple_queue
 

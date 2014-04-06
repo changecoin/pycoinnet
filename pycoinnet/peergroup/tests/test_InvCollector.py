@@ -219,9 +219,11 @@ def test_TxCollector_retry():
             if v:
                 r.append(v)
 
+        # keep a strong reference to these tasks
+        tasks = []
         for i in range(10):
             inv_item = yield from inv_item_q.get()
-            asyncio.Task(_do_fetch(inv_collector, inv_item, r))
+            tasks.append(asyncio.Task(_do_fetch(inv_collector, inv_item, r)))
         while len(r) < 10:
             yield from asyncio.sleep(0.1)
         return r

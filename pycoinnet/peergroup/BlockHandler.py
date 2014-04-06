@@ -60,6 +60,7 @@ class BlockHandler:
             if block:
                 continue
             if should_download_f(block_hash, block_index):
+                # BRAIN DAMAGE: we have to put the task somewhere smart
                 self._download_task = asyncio.Task(_download_block(block_hash, block_index))
 
     def _prep_headers(self, hash_stop):
@@ -117,7 +118,7 @@ class BlockHandler:
 
         next_message = peer.new_get_next_message_f(
             lambda name, data: name in ['getheaders', 'getblocks', 'getdata'])
-        peer.add_task(asyncio.Task(_run_handle_get(next_message)))
+        peer.add_task(_run_handle_get(next_message))
 
     def add_block(self, block):
         """

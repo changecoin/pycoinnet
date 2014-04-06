@@ -136,7 +136,7 @@ def test_queue_gc():
         yield from asyncio.sleep(delay)
 
     for i in range(3):
-        asyncio.Task(async_listen(peer.new_get_next_message_f(), delay=60))
+        peer.add_task(async_listen(peer.new_get_next_message_f(), delay=60))
     tasks = [asyncio.Task(async_listen(peer.new_get_next_message_f(), delay=1)) for i in range(50)]
 
     peer.data_received(VERSION_MSG_BIN)

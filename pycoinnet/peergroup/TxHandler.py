@@ -66,9 +66,9 @@ class TxHandler:
                 pass
 
         next_getdata = peer.new_get_next_message_f(lambda name, data: name == 'getdata')
-        peer.add_task(asyncio.Task(_run_getdata(next_getdata)))
+        peer.add_task(_run_getdata(next_getdata))
         next_mempool = peer.new_get_next_message_f(lambda name, data: name == 'mempool')
-        peer.add_task(asyncio.Task(_run_mempool(next_mempool)))
+        peer.add_task(_run_mempool(next_mempool))
         peer.send_msg("mempool")
 
     def add_tx(self, tx):

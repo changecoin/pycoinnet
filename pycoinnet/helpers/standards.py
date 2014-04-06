@@ -20,6 +20,11 @@ def manage_connection_count(host_port_queue, protocol_factory, connection_count=
     """
     event_q = asyncio.Queue()
 
+    # asyncio.Task doesn't create any non-weak references to the task,
+    # so we have to put them in a container with a strong reference
+    # or they may be garbage collected.
+    event_q.tasks = set()
+
     @asyncio.coroutine
     def run():
         while True:
@@ -37,9 +42,10 @@ def manage_connection_count(host_port_queue, protocol_factory, connection_count=
                 logging.exception("failed to connect to %s:%d", host, port)
 
     for i in range(connection_count):
-        asyncio.Task(run())
+        # we add the tasks to a set on event_q so they're not garbage
+        # collected until event_q is.
+        event_q.tasks.add(asyncio.Task(run()))
 
-    asyncio.Task(run())
     return event_q
 
 
@@ -115,7 +121,7 @@ def install_ping_manager(peer, heartbeat_rate=60, missing_pong_disconnect_timeou
                     logging.error("remote peer %s didn't answer ping, disconnecting", peer)
                     return
     next_message = peer.new_get_next_message_f()
-    peer.add_task(asyncio.Task(ping_task(next_message)))
+    peer.add_task(ping_task(next_message))
 
 
 def install_pong_manager(peer):
@@ -126,7 +132,7 @@ def install_pong_manager(peer):
             assert name == 'ping'
             peer.send_msg("pong", nonce=data["nonce"])
     next_message = peer.new_get_next_message_f(lambda name, data: name == 'ping')
-    peer.add_task(asyncio.Task(pong_task(next_message)))
+    peer.add_task(pong_task(next_message))
 
 
 def install_pingpong_manager(peer):

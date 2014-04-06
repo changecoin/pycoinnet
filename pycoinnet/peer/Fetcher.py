@@ -14,7 +14,7 @@ class Fetcher:
         getdata_loop_future = asyncio.Task(self._getdata_loop())
         next_message = peer.new_get_next_message_f(
             filter_f=lambda name, data: name in ["tx", "block", "notfound"])
-        self._fetch_task = asyncio.Task(self._fetch_loop(next_message, getdata_loop_future))
+        peer.add_task(self._fetch_loop(next_message, getdata_loop_future))
 
     def fetch(self, inv_item, timeout=None):
         """

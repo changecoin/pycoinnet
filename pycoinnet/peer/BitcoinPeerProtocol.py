@@ -75,7 +75,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         gives an easy way to keep a strong reference to a Task that won't
         disappear until the peer does.
         """
-        self._tasks.add(task)
+        self._tasks.add(asyncio.async(task))
 
     def send_msg(self, message_name, **kwargs):
         message_data = pack_from_data(message_name, **kwargs)
