@@ -90,7 +90,10 @@ def test_InvCollector():
         f = asyncio.Task(run_remote_peer(peer.new_get_next_message_f(), peer, txs))
         futures.append(f)
 
-    f = asyncio.Task(run_local_peer([peer1_2, peer1_3, peer1_4]))
+    inv_collector = InvCollector()
+    [inv_collector.add_peer(peer) for peer in [peer1_2, peer1_3, peer1_4]]
+
+    f = asyncio.Task(run_local_peer(inv_collector, inv_collector.new_inv_item_queue()))
     done, pending = asyncio.get_event_loop().run_until_complete(asyncio.wait([f], timeout=5.0))
     r = done.pop().result()
     assert len(r) == 90
