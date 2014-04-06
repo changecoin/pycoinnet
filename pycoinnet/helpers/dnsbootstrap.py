@@ -14,12 +14,11 @@ from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.helpers.standards import get_date_address_tuples
 from pycoinnet.helpers.standards import version_data_for_peer
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
-from pycoinnet.util.Queue import Queue
 
 def dns_bootstrap_host_port_q(network_info):
     dns_bootstrap = network_info["DNS_BOOTSTRAP"]
 
-    superpeer_ip_queue = Queue()
+    superpeer_ip_queue = asyncio.Queue()
 
     @asyncio.coroutine
     def bootstrap_superpeer_addresses(dns_bootstrap):
@@ -78,7 +77,8 @@ def new_queue_of_timestamp_peeraddress_tuples(network_info, timestamp_peeraddres
             except Exception:
                 logging.exception("failed during connect to %s", peer_name)
 
-    futures = [asyncio.Task(loop_connect_to_superpeer(superpeer_ip_queue)) for i in range(30)]
+    timestamp_peeraddress_tuple_queue.tasks = [
+        asyncio.Task(loop_connect_to_superpeer(superpeer_ip_queue)) for i in range(30)]
 
     return timestamp_peeraddress_tuple_queue
 

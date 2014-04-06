@@ -1,3 +1,8 @@
+"""
+This code takes care of calling "getheaders" repeatedly to quickly
+catch up the local copy of the block chain. It does not get full blocks.
+"""
+
 import asyncio
 import logging
 import time
@@ -69,9 +74,10 @@ def fast_forwarder_add_peer_f(blockchain):
                     peer_queue.put_nowait((priority, (peer, lbi, rate_dict)))
                 # otherwise, this peer is stupid and should be ignored
 
-    asyncio.Task(_run_ff(blockchain))
-
     def add_peer(peer, last_block_index):
         peer_queue.put_nowait((0, (peer, last_block_index, dict(total_seconds=0, records=0))))
+
+    # we need a strong reference to this task
+    add_peer.task = asyncio.Task(_run_ff(blockchain))
 
     return add_peer

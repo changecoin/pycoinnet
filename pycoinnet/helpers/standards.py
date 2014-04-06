@@ -115,7 +115,7 @@ def install_ping_manager(peer, heartbeat_rate=60, missing_pong_disconnect_timeou
                     logging.error("remote peer %s didn't answer ping, disconnecting", peer)
                     return
     next_message = peer.new_get_next_message_f()
-    asyncio.Task(ping_task(next_message))
+    peer.add_task(ping_task(next_message))
 
 
 def install_pong_manager(peer):
@@ -126,7 +126,7 @@ def install_pong_manager(peer):
             assert name == 'ping'
             peer.send_msg("pong", nonce=data["nonce"])
     next_message = peer.new_get_next_message_f(lambda name, data: name == 'ping')
-    asyncio.Task(pong_task(next_message))
+    peer.add_task(pong_task(next_message))
 
 
 def install_pingpong_manager(peer):

@@ -8,7 +8,6 @@ import weakref
 from pycoin import encoding
 
 from pycoinnet.message import parse_from_data, pack_from_data
-from pycoinnet.util.Queue import Queue
 
 
 class BitcoinProtocolError(Exception):
@@ -52,7 +51,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
                 if message_name is None:
                     break
 
-        q = Queue(maxsize=maxsize)
+        q = asyncio.Queue(maxsize=maxsize)
         q.filter_f = filter_f
         self.message_queues.add(q)
 
@@ -75,7 +74,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         gives an easy way to keep a strong reference to a Task that won't
         disappear until the peer does.
         """
-        self._tasks.add(task)
+        self._tasks.add(asyncio.async(task))
 
     def send_msg(self, message_name, **kwargs):
         message_data = pack_from_data(message_name, **kwargs)
