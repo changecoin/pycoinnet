@@ -1,6 +1,8 @@
 import logging
 import weakref
 
+from asyncio import Queue
+
 from pycoinnet.util.ChainFinder import ChainFinder
 
 ZERO_HASH = b'\0' * 32

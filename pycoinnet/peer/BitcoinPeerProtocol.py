@@ -8,7 +8,6 @@ import weakref
 from pycoin import encoding
 
 from pycoinnet.message import parse_from_data, pack_from_data
-from pycoinnet.util.Queue import Queue
 
 
 class BitcoinProtocolError(Exception):
@@ -52,7 +51,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
                 if message_name is None:
                     break
 
-        q = Queue(maxsize=maxsize)
+        q = asyncio.Queue(maxsize=maxsize)
         q.filter_f = filter_f
         self.message_queues.add(q)
 

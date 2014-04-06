@@ -119,7 +119,7 @@ def block_chain_locker(block_chain):
             # wait for a change to blockchain
             op, block_header, block_index = yield from change_q.get()
 
-    asyncio.Task(_run(block_chain, block_chain.new_change_q()))
+    return asyncio.Task(_run(block_chain, block_chain.new_change_q()))
 
 @asyncio.coroutine
 def new_block_fetcher(inv_collector, block_chain):
@@ -173,7 +173,7 @@ def main():
     block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)
     change_q = block_chain.new_change_q()
 
-    block_chain_locker(block_chain)
+    locker_task = block_chain_locker(block_chain)
     block_chain.add_nodes(block_chain_store.block_tuple_iterator())
 
     blockfetcher = Blockfetcher()
@@ -186,28 +186,30 @@ def main():
         while True:
             block_store.rotate()
             yield from asyncio.sleep(1800)
-    asyncio.Task(_rotate(block_store))
+    rotate_task = asyncio.Task(_rotate(block_store))
 
     blockhandler = BlockHandler(inv_collector, block_chain, block_store,
         should_download_f=lambda block_hash, block_index: block_index >= args.fast_forward)
 
-    asyncio.Task(
+    block_processor_task = asyncio.Task(
         block_processor(
             change_q, blockfetcher, args.config_dir,
             args.blockdir, args.depth, args.fast_forward))
     fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
 
-    asyncio.Task(new_block_fetcher(inv_collector, block_chain))
+    fetcher_task = asyncio.Task(new_block_fetcher(inv_collector, block_chain))
 
     def create_protocol_callback():
         peer = BitcoinPeerProtocol(MAINNET["MAGIC_HEADER"])
         install_pingpong_manager(peer)
         fetcher = Fetcher(peer)
-        asyncio.Task(run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector, blockhandler))
+        peer.add_task(run_peer(
+            peer, fetcher, fast_forward_add_peer,
+            blockfetcher, inv_collector, blockhandler))
         return peer
 
     connection_info_q = manage_connection_count(host_port_q, create_protocol_callback, 8)
-    asyncio.Task(show_connection_info(connection_info_q))
+    show_task = asyncio.Task(show_connection_info(connection_info_q))
     asyncio.get_event_loop().run_forever()
 
 if __name__ == '__main__':
