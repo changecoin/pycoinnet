@@ -31,6 +31,7 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         self.bytes_read = 0
         self.bytes_writ = 0
         self.connect_start_time = None
+        self._tasks = set()
 
     def new_get_next_message_f(self, filter_f=lambda message_name, data: True, maxsize=0):
         @asyncio.coroutine
@@ -67,6 +68,14 @@ class BitcoinPeerProtocol(asyncio.Protocol):
         else:
             self._run_handle = asyncio.Task(run(self))
         return get_next_message
+
+    def add_task(self, task):
+        """
+        Some Task objects are associated with the peer. This method
+        gives an easy way to keep a strong reference to a Task that won't
+        disappear until the peer does.
+        """
+        self._tasks.add(task)
 
     def send_msg(self, message_name, **kwargs):
         message_data = pack_from_data(message_name, **kwargs)

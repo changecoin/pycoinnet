@@ -70,7 +70,7 @@ class InvCollector:
         advertise_task = asyncio.Task(_advertise_to_peer(peer, q))
 
         next_message = peer.new_get_next_message_f(lambda name, data: name in ("inv", "notfound"))
-        asyncio.Task(_watch_peer(peer, next_message, advertise_task))
+        peer.add_task(asyncio.Task(_watch_peer(peer, next_message, advertise_task)))
 
     def fetcher_for_peer(self, peer):
         return self.fetchers_by_peer.get(peer)

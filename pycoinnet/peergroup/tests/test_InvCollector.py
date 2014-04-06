@@ -91,7 +91,7 @@ def test_InvCollector():
         futures.append(f)
 
     f = asyncio.Task(run_local_peer([peer1_2, peer1_3, peer1_4]))
-    done, pending = asyncio.get_event_loop().run_until_complete(asyncio.wait([f]))
+    done, pending = asyncio.get_event_loop().run_until_complete(asyncio.wait([f], timeout=5.0))
     r = done.pop().result()
     assert len(r) == 90
     assert [tx.hash() for tx in r] == [tx.hash() for tx in TX_LIST[:90]]

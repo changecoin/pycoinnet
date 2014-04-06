@@ -41,7 +41,7 @@ class BlockHandler:
         self.block_chain = block_chain
         self.block_store = block_store
         self.q = inv_collector.new_inv_item_queue()
-        asyncio.Task(self._watch_invcollector(block_validator))
+        self._watch_invcollector_task = asyncio.Task(self._watch_invcollector(block_validator))
         #asyncio.Task(self._watch_block_chain(block_chain.new_change_q(), should_download_f))
 
     @asyncio.coroutine
@@ -60,7 +60,7 @@ class BlockHandler:
             if block:
                 continue
             if should_download_f(block_hash, block_index):
-                asyncio.Task(_download_block(block_hash, block_index))
+                self._download_task = asyncio.Task(_download_block(block_hash, block_index))
 
     def _prep_headers(self, hash_stop):
         headers = []
@@ -117,8 +117,7 @@ class BlockHandler:
 
         next_message = peer.new_get_next_message_f(
             lambda name, data: name in ['getheaders', 'getblocks', 'getdata'])
-        f = asyncio.Task(_run_handle_get(next_message))
-        return f
+        peer.add_task(asyncio.Task(_run_handle_get(next_message)))
 
     def add_block(self, block):
         """
