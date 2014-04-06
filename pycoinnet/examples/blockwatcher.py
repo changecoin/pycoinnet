@@ -58,7 +58,7 @@ def update_last_processed_block(config_dir, last_processed_block):
     except Exception:
         logging.exception("problem writing %s", last_processed_block_path)
 
-def block_processor(change_q, blockfetcher, config_dir, blockdir, depth, fast_forward):
+def get_last_processed_block(config_dir):
     last_processed_block_path = os.path.join(config_dir, "last_processed_block")
     try:
         with open(last_processed_block_path) as f:
@@ -66,9 +66,11 @@ def block_processor(change_q, blockfetcher, config_dir, blockdir, depth, fast_fo
     except Exception:
         logging.exception("problem getting last processed block, using 0")
         last_processed_block = 0
-    block_q = Queue()
-    last_processed_block = max(last_processed_block, fast_forward)
-    update_last_processed_block(config_dir, last_processed_block)
+    return last_processed_block
+
+def block_processor(change_q, blockfetcher, config_dir, blockdir, depth):
+    last_processed_block = get_last_processed_block(config_dir)
+    block_q = asyncio.Queue()
     while True:
         add_remove, block_hash, block_index = yield from change_q.get()
         if add_remove == "remove":
@@ -88,7 +90,7 @@ def block_processor(change_q, blockfetcher, config_dir, blockdir, depth, fast_fo
         if change_q.qsize() > 0:
             continue
         while block_q.qsize() > depth:
-            # we have blocks that are buries and ready to write
+            # we have blocks that are buried and ready to write
             future, block_hash, block_index = yield from block_q.get()
             block = yield from asyncio.wait_for(future, timeout=None)
             write_block_to_disk(blockdir, block, block_index)
@@ -171,7 +173,6 @@ def main():
 
     block_chain_store = BlockChainStore(args.config_dir)
     block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)
-    change_q = block_chain.new_change_q()
 
     locker_task = block_chain_locker(block_chain)
     block_chain.add_nodes(block_chain_store.block_tuple_iterator())
@@ -191,10 +192,15 @@ def main():
     blockhandler = BlockHandler(inv_collector, block_chain, block_store,
         should_download_f=lambda block_hash, block_index: block_index >= args.fast_forward)
 
-    block_processor_task = asyncio.Task(
-        block_processor(
-            change_q, blockfetcher, args.config_dir,
-            args.blockdir, args.depth, args.fast_forward))
+    last_processed_block = max(get_last_processed_block(config_dir), args.fast_forward)
+    update_last_processed_block(config_dir, last_processed_block)
+
+    change_q = asyncio.Queue()
+    from pycoinnet.util.BlockChain import _update_q
+    block_chain.add_change_callback(lambda blockchain, ops: _update_q(change_q, ops))
+
+    block_processor_task = asyncio.Task(block_processor(change_q, blockfetcher, args.config_dir, args.blockdir, args.depth)))
+
     fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
 
     fetcher_task = asyncio.Task(new_block_fetcher(inv_collector, block_chain))

@@ -148,7 +148,7 @@ def test_fork():
 
 def test_callback():
     R = []
-    def the_callback(ops):
+    def the_callback(blockchain, ops):
         R.extend(ops)
 
     parent_for_0 = b'\0' * 32
