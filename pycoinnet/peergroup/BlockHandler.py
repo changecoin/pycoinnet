@@ -5,15 +5,24 @@ This class should be instantiated once per client.
 
 It takes an InvCollector, a BlockChain, and a BlockStore.
 
-It monitors both the BlockChain and the InvCollector
+It monitors both the BlockChain and the InvCollector.
 
 When a new Block object is noted by the InvCollector, this object will
 fetch it, validate it, then store it in the BlockStore and tell the
 InvCollector to advertise it to other peers.
 
+When the BlockChain notes a change, it checks the BlockStore to see
+if it's available; if not, and should_download_f returns True, it
+attempts to fetch it, validate it, then store it in the BlockStore
+and tell the InvCollector to advertise it to other peers.
+
+If a new block is mined, it should be added via the add_block
+method of this class. It will then advertise it to peers so
+it will propogate.
+
 When a new peer comes online, invoke add_peer.
 
-This object will then watch for getheader, getblock and getdata messages
+This object will then watch for getheaders, getblock and getdata messages
 and handle them appropriately.
 """
 

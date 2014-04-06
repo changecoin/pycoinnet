@@ -1,3 +1,8 @@
+"""
+This code takes care of calling "getheaders" repeatedly to quickly
+catch up the local copy of the block chain. It does not get full blocks.
+"""
+
 import asyncio
 import logging
 import time
