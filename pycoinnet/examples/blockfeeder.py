@@ -1,7 +1,12 @@
 #!/usr/bin/env python
 
 """
-Custom bitcoin client
+This clever little hack is an interoperability test that downloads blocks
+from remote peers and forces them into a client (usually the Satoshi client)
+running locally.
+
+If we can build a blockchain on the Satoshi client but only allowing it to
+connect to a pycoinnet client... well, that's a good feeling.
 """
 
 import argparse
