@@ -29,7 +29,6 @@ from pycoinnet.helpers.standards import manage_connection_count
 from pycoinnet.helpers.standards import version_data_for_peer
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 
-from pycoinnet.util.Queue import Queue
 from pycoinnet.util.TwoLevelDict import TwoLevelDict
 
 from pycoinnet.PeerAddress import PeerAddress
@@ -163,7 +162,7 @@ def main():
     if 1:
         host_port_q = dns_bootstrap_host_port_q(MAINNET)
     else:
-        host_port_q = Queue()
+        host_port_q = asyncio.Queue()
         host_port_q.put_nowait(("127.0.0.1", 8333))
 
     args = parser.parse_args()
