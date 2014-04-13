@@ -145,7 +145,6 @@ def test_fork():
     assert set(BC.chain_finder.missing_parents()) == set([parent_for_0])
 
 
-
 def test_callback():
     R = []
     def the_callback(blockchain, ops):
