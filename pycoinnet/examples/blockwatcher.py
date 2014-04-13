@@ -190,7 +190,9 @@ def main():
 
     change_q = asyncio.Queue()
     from pycoinnet.util.BlockChain import _update_q
-    block_chain.add_change_callback(lambda blockchain, ops: _update_q(change_q, ops))
+    def do_update(blockchain, ops):
+        _update_q(change_q, [list(o) for o in ops])
+    block_chain.add_change_callback(do_update)
 
     block_processor_task = asyncio.Task(
         block_processor(
