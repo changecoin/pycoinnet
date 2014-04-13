@@ -1,8 +1,6 @@
 import logging
 import weakref
 
-from asyncio import Queue
-
 from pycoinnet.util.ChainFinder import ChainFinder
 
 ZERO_HASH = b'\0' * 32
@@ -165,7 +163,7 @@ class BlockChain:
             op = ("add", h, size-idx-1)
             ops.append(op)
             self.hash_to_index_lookup[size-idx-1] = h
-        for q in self.change_queues:
-            _update_q(q, ops)
+        for callback in self.change_callbacks:
+            callback(self, ops)
 
         return ops
