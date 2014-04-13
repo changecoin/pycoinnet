@@ -168,7 +168,6 @@ def main():
     block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)
 
     block_chain.add_change_callback(block_chain_locker_callback)
-    block_chain.add_nodes(block_chain_store.block_tuple_iterator())
 
     blockfetcher = Blockfetcher()
     inv_collector = InvCollector()
@@ -193,6 +192,7 @@ def main():
     def do_update(blockchain, ops):
         _update_q(change_q, [list(o) for o in ops])
     block_chain.add_change_callback(do_update)
+    block_chain.add_nodes(block_chain_store.block_tuple_iterator())
 
     block_processor_task = asyncio.Task(
         block_processor(
