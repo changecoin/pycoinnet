@@ -3,7 +3,7 @@ import os
 
 
 class BlockChainStore:
-    PETRIFIED_FN = "petrified.bin"
+    BLOCK_HASHES_PATH = "locked_block_hashes.bin"
 
     def __init__(self, dir_path, parent_to_0=b'\0' * 32):
         self.dir_path = dir_path
@@ -11,7 +11,7 @@ class BlockChainStore:
 
     def block_tuple_iterator(self):
         try:
-            with open(os.path.join(self.dir_path, self.PETRIFIED_FN), "rb") as f:
+            with open(os.path.join(self.dir_path, self.BLOCK_HASHES_PATH), "rb") as f:
                 prev_hash = self.parent_to_0
                 while 1:
                     d = f.read(16384)
@@ -26,9 +26,9 @@ class BlockChainStore:
             pass
 
     def did_lock_to_index(self, block_tuple_list, start_index):
-        with open(os.path.join(self.dir_path, self.PETRIFIED_FN), "a+b") as f:
+        with open(os.path.join(self.dir_path, self.BLOCK_HASHES_PATH), "a+b") as f:
             pass
-        with open(os.path.join(self.dir_path, self.PETRIFIED_FN), "r+b") as f:
+        with open(os.path.join(self.dir_path, self.BLOCK_HASHES_PATH), "r+b") as f:
             f.seek(start_index*32)
             count = 0
             ## TODO: make sure the one we're writing is in the right place
