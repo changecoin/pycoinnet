@@ -65,15 +65,32 @@ def new_block_fetcher(inv_collector, block_chain):
                 block_chain.add_headers([block])
 
 
+@asyncio.coroutine
+def show_connection_info(connection_info_q):
+    while True:
+        verb, noun, peer = yield from connection_info_q.get()
+        logging.info("connection manager: %s on %s", verb, noun)
+
+
 class Client(object):
 
     def __init__(self, network, host_port_q, should_download_block_f, block_chain_store,
-                 blockchain_change_callback, show_connection_info):
+                 blockchain_change_callback):
         """
         network:
             a value from pycoinnet.helpers.networks
         host_port_q:
             a Queue that is being fed potential places to connect
+        should_download_block_f:
+            a function that accepting(block_hash, block_index) and returning a boolean
+            indicating whether that block should be downloaded. Only used during fast-forward.
+        block_chain_store:
+            usually a BlockChainStore instance
+        blockchain_change_callback:
+            a callback that expects (blockchain, list_of_ops) that is invoked whenever the
+            block chain is updated; blockchain is a BlockChain object and list_of_ops is a pair
+            of tuples of the form (op, block_hash, block_index) where op is one of "add" or "remove",
+            block_hash is a binary block hash, and block_index is an integer index number.
         """
 
         block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)

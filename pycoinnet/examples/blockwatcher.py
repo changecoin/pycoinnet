@@ -17,13 +17,6 @@ from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 from pycoinnet.helpers.networks import MAINNET
 
 
-@asyncio.coroutine
-def show_connection_info(connection_info_q):
-    while True:
-        verb, noun, peer = yield from connection_info_q.get()
-        logging.info("connection manager: %s on %s", verb, noun)
-
-
 def write_block_to_disk(blockdir, block, block_index):
     p = os.path.join(blockdir, "block-%06d-%s.bin" % (block_index, block.id()))
     tmp_path = p + ".tmp"
@@ -137,7 +130,7 @@ def main():
         _update_q(change_q, [list(o) for o in ops])
 
     client = Client(
-        MAINNET, host_port_q, should_download_block_f, block_chain_store, do_update, show_connection_info)
+        MAINNET, host_port_q, should_download_block_f, block_chain_store, do_update)
 
     blockfetcher = client.blockfetcher
 
