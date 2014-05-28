@@ -50,6 +50,8 @@ def test_get_mined_block():
             
     blocks = helper.make_blocks(25)
 
+    LOOP = asyncio.get_event_loop()
+
     with tempfile.TemporaryDirectory() as state_dir:
 
         host_port_q_1 = asyncio.Queue()
@@ -63,25 +65,26 @@ def test_get_mined_block():
         block_chain_store_2 = BlockChainStore(os.path.join(state_dir, "2"))
         client_2 = Client(TESTNET, host_port_q_2, should_download_block_f, block_chain_store_2, do_update_2, server_port=9115)
 
-        for b in blocks[:20]:
-            client_1.add_block(b)
+        def add_blocks_1():
+            for b in blocks[:20]:
+                client_1.add_block(b)
 
-        #asyncio.get_event_loop().run_until_complete(asyncio.sleep(2))
+        def add_blocks_2():
+            for b in blocks[20:]:
+                client_1.add_block(b)
+
+        LOOP.call_soon(add_blocks_1)
+
+        LOOP.run_until_complete(asyncio.sleep(0.5))
         host_port_q_2.put_nowait(("127.0.0.1", 9110))
 
-        #asyncio.get_event_loop().run_until_complete(asyncio.sleep(5))
+        LOOP.run_until_complete(asyncio.sleep(0.5))
+        LOOP.run_until_complete(client_2_has_20_blocks_future)
 
-        #asyncio.get_event_loop().run_until_complete(asyncio.sleep(2))
-        asyncio.get_event_loop().run_until_complete(client_2_has_20_blocks_future)
+        LOOP.run_until_complete(asyncio.sleep(0.5))
 
-        #asyncio.get_event_loop().run_until_complete(asyncio.sleep(5))
-        for b in blocks[20:]:
-            client_1.add_block(b)
+        LOOP.call_soon(add_blocks_2)
 
-        #asyncio.get_event_loop().run_until_complete(asyncio.sleep(5))
-        asyncio.get_event_loop().run_until_complete(client_2_has_25_blocks_future)
-        #asyncio.get_event_loop().run_until_complete(asyncio.sleep(5))
-        #asyncio.get_event_loop().run_forever()
+        LOOP.run_until_complete(asyncio.sleep(0.5))
+        LOOP.run_until_complete(client_2_has_25_blocks_future)
 
-
-test_get_mined_block()
