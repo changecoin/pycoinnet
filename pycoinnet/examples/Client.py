@@ -11,6 +11,8 @@ PARAMETERS:
 """
 
 import asyncio
+import os
+import logging
 
 from pycoinnet.InvItem import ITEM_TYPE_BLOCK
 
@@ -30,18 +32,6 @@ from pycoinnet.helpers.standards import manage_connection_count
 from pycoinnet.helpers.standards import version_data_for_peer
 
 from pycoinnet.util.TwoLevelDict import TwoLevelDict
-
-
-@asyncio.coroutine
-def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector, blockhandler):
-    yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
-    version_parameters = version_data_for_peer(peer)
-    version_data = yield from initial_handshake(peer, version_parameters)
-    last_block_index = version_data["last_block_index"]
-    fast_forward_add_peer(peer, last_block_index)
-    blockfetcher.add_peer(peer, fetcher, last_block_index)
-    inv_collector.add_peer(peer)
-    blockhandler.add_peer(peer)
 
 
 def block_chain_locker_callback(block_chain, ops):
@@ -75,7 +65,7 @@ def show_connection_info(connection_info_q):
 class Client(object):
 
     def __init__(self, network, host_port_q, should_download_block_f, block_chain_store,
-                 blockchain_change_callback):
+                 blockchain_change_callback, server_port=9999):
         """
         network:
             a value from pycoinnet.helpers.networks
@@ -118,6 +108,22 @@ class Client(object):
         self.fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
         self.fetcher_task = asyncio.Task(new_block_fetcher(self.inv_collector, block_chain))
 
+        self.nonce = int.from_bytes(os.urandom(8), byteorder="big")
+        self.subversion = "/Notoshi/".encode("utf8")
+
+        @asyncio.coroutine
+        def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector, blockhandler):
+            yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
+            version_parameters = version_data_for_peer(
+                peer, local_port=(server_port or 0), last_block_index=block_chain.length(), nonce=self.nonce,
+                subversion=self.subversion)
+            version_data = yield from initial_handshake(peer, version_parameters)
+            last_block_index = version_data["last_block_index"]
+            fast_forward_add_peer(peer, last_block_index)
+            blockfetcher.add_peer(peer, fetcher, last_block_index)
+            inv_collector.add_peer(peer)
+            blockhandler.add_peer(peer)
+
         def create_protocol_callback():
             peer = BitcoinPeerProtocol(network["MAGIC_HEADER"])
             install_pingpong_manager(peer)
@@ -130,3 +136,25 @@ class Client(object):
         self.connection_info_q = manage_connection_count(host_port_q, create_protocol_callback, 8)
         self.show_task = asyncio.Task(show_connection_info(self.connection_info_q))
 
+        # listener
+        @asyncio.coroutine
+        def run_listener():
+            abstract_server = None
+            future_peer = asyncio.Future()
+            try:
+                abstract_server = yield from asyncio.get_event_loop().create_server(
+                    protocol_factory=create_protocol_callback, port=server_port)
+                return abstract_server
+            except Exception as OSError:
+                logging.info("can't listen on port %d", server_port)
+
+        if server_port:
+            self.server_task = asyncio.Task(run_listener())
+
+    def add_blocks(self, blocks):
+        for block in blocks:
+            self.blockhandler.add_block(block)
+        self.blockhandler.block_chain.add_headers(blocks)
+
+    def add_block(self, block):
+        self.add_blocks([block])
