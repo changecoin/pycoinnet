@@ -145,7 +145,7 @@ class Client(object):
                 abstract_server = yield from asyncio.get_event_loop().create_server(
                     protocol_factory=create_protocol_callback, port=server_port)
                 return abstract_server
-            except Exception as OSError:
+            except OSError as ex:
                 logging.info("can't listen on port %d", server_port)
 
         if server_port:

@@ -73,18 +73,21 @@ def test_get_mined_block():
             for b in blocks[20:]:
                 client_1.add_block(b)
 
+        def wait():
+            LOOP.run_until_complete(asyncio.sleep(0.05))
+
         LOOP.call_soon(add_blocks_1)
 
-        LOOP.run_until_complete(asyncio.sleep(0.5))
+        wait()
         host_port_q_2.put_nowait(("127.0.0.1", 9110))
 
-        LOOP.run_until_complete(asyncio.sleep(0.5))
+        wait()
         LOOP.run_until_complete(client_2_has_20_blocks_future)
 
-        LOOP.run_until_complete(asyncio.sleep(0.5))
+        wait()
 
         LOOP.call_soon(add_blocks_2)
 
-        LOOP.run_until_complete(asyncio.sleep(0.5))
+        wait()
         LOOP.run_until_complete(client_2_has_25_blocks_future)
 
