@@ -103,7 +103,7 @@ class Client(object):
                                          should_download_f=should_download_block_f)
 
         block_chain.add_change_callback(blockchain_change_callback)
-        block_chain.add_nodes(block_chain_store.block_tuple_iterator())
+        block_chain.add_headers(block_chain_store.headers())
 
         self.fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
         self.fetcher_task = asyncio.Task(new_block_fetcher(self.inv_collector, block_chain))

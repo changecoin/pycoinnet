@@ -2,6 +2,23 @@ import logging
 import os
 
 
+class FakeHeader:
+    def __init__(self, h, parent_hash):
+        self.h = h
+        self.parent_hash = parent_hash
+        self.difficulty = 1
+
+    def hash(self):
+        return self.h
+
+    def __repr__(self):
+        return "%s (parent %s)" % (self.h, self.parent_hash)
+
+    def __eq__(self, other):
+        return self.h == other.h and self.parent_hash == other.parent_hash
+
+
+
 class BlockChainStore:
     BLOCK_HASHES_PATH = "locked_block_hashes.bin"
 
@@ -25,6 +42,10 @@ class BlockChainStore:
         except Exception:
             pass
 
+    def headers(self):
+        for the_hash, prev_hash, weight in self.block_tuple_iterator():
+            yield FakeHeader(the_hash, prev_hash)
+
     def did_lock_to_index(self, block_tuple_list, start_index):
         with open(os.path.join(self.dir_path, self.BLOCK_HASHES_PATH), "a+b") as f:
             pass
@@ -32,7 +53,7 @@ class BlockChainStore:
             f.seek(start_index*32)
             count = 0
             ## TODO: make sure the one we're writing is in the right place
-            for the_hash, parent_hash, difficulty in block_tuple_list:
-                f.write(the_hash)
+            for block in block_tuple_list:
+                f.write(block.hash())
                 count += 1
             logging.debug("wrote %d items to block chain store at %s", count, self.dir_path)
