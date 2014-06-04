@@ -22,7 +22,7 @@ def _update_q(q, ops):
 
 
 class BlockChain:
-    def __init__(self, parent_hash=ZERO_HASH, unlocked_block_chain={}, did_lock_to_index_f=None):
+    def __init__(self, parent_hash=ZERO_HASH, unlocked_block_storage={}, did_lock_to_index_f=None):
         self.parent_hash = parent_hash
         self.hash_to_index_lookup = {}
         self.weight_lookup = {}
@@ -30,9 +30,17 @@ class BlockChain:
         self.change_callbacks = weakref.WeakSet()
         self._longest_chain_cache = None
         self.did_lock_to_index_f = did_lock_to_index_f
-        self.unlocked_block_chain = unlocked_block_chain
+        self.unlocked_block_storage = unlocked_block_storage
 
         self._locked_chain = []
+
+    def preload_locked_blocks(self, headers_iter):
+        self._locked_chain = []
+        for idx, h in enumerate(headers_iter):
+            the_hash = h.hash()
+            self._locked_chain.append((the_hash, h.previous_block_hash, h.difficulty))
+            self.hash_to_index_lookup[the_hash] = idx
+        self.parent_hash = the_hash
 
     def is_hash_known(self, the_hash):
         return the_hash in self.hash_to_index_lookup
@@ -113,15 +121,15 @@ class BlockChain:
             self._longest_chain_cache = longest[:-1]
         return self._longest_chain_cache
 
-    def header_for_hash(self, h):
-        return self.unlocked_block_chain.get(h)
+    def block_for_hash(self, h):
+        return self.unlocked_block_storage.get(h)
 
     def add_headers(self, header_iter):
         def iterate():
             for header in header_iter:
                 h = header.hash()
                 self.weight_lookup[h] = header.difficulty
-                self.unlocked_block_chain[h] = header
+                self.unlocked_block_storage[h] = header
                 yield h, header.previous_block_hash
 
         old_longest_chain = self._longest_local_block_chain()
@@ -152,14 +160,14 @@ class BlockChain:
         ops = []
         size = len(old_longest_chain) + len(self._locked_chain)
         for idx, h in enumerate(old_path):
-            op = ("remove", h, size-idx-1)
+            op = ("remove", self.block_for_hash(h), size-idx-1)
             ops.append(op)
-            del self.hash_to_index_lookup[size-idx-1]
+            del self.hash_to_index_lookup[h]
         size = len(new_longest_chain) + len(self._locked_chain)
         for idx, h in reversed(list(enumerate(new_path))):
-            op = ("add", h, size-idx-1)
+            op = ("add", self.block_for_hash(h), size-idx-1)
             ops.append(op)
-            self.hash_to_index_lookup[size-idx-1] = h
+            self.hash_to_index_lookup[h] = size-idx-1
         for callback in self.change_callbacks:
             callback(self, ops)
 

@@ -85,6 +85,8 @@ class Client(object):
 
         block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)
 
+        block_chain.preload_locked_blocks(block_chain_store.headers())
+
         block_chain.add_change_callback(block_chain_locker_callback)
 
         self.blockfetcher = Blockfetcher()
@@ -103,7 +105,6 @@ class Client(object):
                                          should_download_f=should_download_block_f)
 
         block_chain.add_change_callback(blockchain_change_callback)
-        block_chain.add_headers(block_chain_store.headers())
 
         self.fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
         self.fetcher_task = asyncio.Task(new_block_fetcher(self.inv_collector, block_chain))

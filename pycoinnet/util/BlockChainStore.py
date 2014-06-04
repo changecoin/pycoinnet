@@ -3,20 +3,22 @@ import os
 
 
 class FakeHeader:
-    def __init__(self, h, parent_hash):
+    def __init__(self, h, previous_block_hash):
         self.h = h
-        self.parent_hash = parent_hash
+        self.previous_block_hash = previous_block_hash
         self.difficulty = 1
 
     def hash(self):
         return self.h
 
     def __repr__(self):
-        return "%s (parent %s)" % (self.h, self.parent_hash)
+        return "%s (parent %s)" % (self.h, self.previous_block_hash)
 
     def __eq__(self, other):
-        return self.h == other.h and self.parent_hash == other.parent_hash
+        return self.h == other.h and self.previous_block_hash == other.previous_block_hash
 
+    def __hash__(self):
+        return self.h.__hash__()
 
 
 class BlockChainStore:
