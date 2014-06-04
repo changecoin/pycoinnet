@@ -9,12 +9,12 @@ import asyncio
 import logging
 import os
 
-from pycoinnet.examples.prototype import Client
+from pycoinnet.examples.Client import Client
 
 from pycoinnet.util.BlockChainStore import BlockChainStore
 
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
-from pycoinnet.helpers.networks import MAINNET
+from pycoinnet.helpers.networks import MAINNET, TESTNET
 
 
 def write_block_to_disk(blockdir, block, block_index):
@@ -102,18 +102,20 @@ def main():
 
     args = parser.parse_args()
 
-    if args.log_file:
-        log_file(args.log_file)
-
     asyncio.tasks._DEBUG = True
     logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
     logging.getLogger("asyncio").setLevel(logging.INFO)
 
+    if args.log_file:
+        log_file(args.log_file)
+
     state_dir = args.state_dir
     block_chain_store = BlockChainStore(state_dir)
 
+    network = MAINNET
+
     if 1:
-        host_port_q = dns_bootstrap_host_port_q(MAINNET)
+        host_port_q = dns_bootstrap_host_port_q(network)
     else:
         host_port_q = asyncio.Queue()
         host_port_q.put_nowait(("127.0.0.1", 8333))
@@ -130,7 +132,7 @@ def main():
         _update_q(change_q, [list(o) for o in ops])
 
     client = Client(
-        MAINNET, host_port_q, should_download_block_f, block_chain_store, do_update)
+        network, host_port_q, should_download_block_f, block_chain_store, do_update)
 
     blockfetcher = client.blockfetcher
 
