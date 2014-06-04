@@ -22,7 +22,7 @@ def _update_q(q, ops):
 
 
 class BlockChain:
-    def __init__(self, parent_hash=ZERO_HASH, did_lock_to_index_f=None):
+    def __init__(self, parent_hash=ZERO_HASH, unlocked_block_chain={}, did_lock_to_index_f=None):
         self.parent_hash = parent_hash
         self.hash_to_index_lookup = {}
         self.weight_lookup = {}
@@ -30,6 +30,7 @@ class BlockChain:
         self.change_callbacks = weakref.WeakSet()
         self._longest_chain_cache = None
         self.did_lock_to_index_f = did_lock_to_index_f
+        self.unlocked_block_chain = unlocked_block_chain
 
         self._locked_chain = []
 
@@ -112,17 +113,15 @@ class BlockChain:
             self._longest_chain_cache = longest[:-1]
         return self._longest_chain_cache
 
+    def header_for_hash(self, h):
+        return self.unlocked_block_chain.get(h)
+
     def add_headers(self, header_iter):
-        return self.add_nodes(header_iter)
-
-    def add_nodes(self, header_iter):
-        hash_to_header = {}
-
         def iterate():
             for header in header_iter:
                 h = header.hash()
                 self.weight_lookup[h] = header.difficulty
-                hash_to_header[h] = header
+                self.unlocked_block_chain[h] = header
                 yield h, header.previous_block_hash
 
         old_longest_chain = self._longest_local_block_chain()
@@ -162,6 +161,6 @@ class BlockChain:
             ops.append(op)
             self.hash_to_index_lookup[size-idx-1] = h
         for callback in self.change_callbacks:
-            callback(self, ops, hash_to_header)
+            callback(self, ops)
 
         return ops
