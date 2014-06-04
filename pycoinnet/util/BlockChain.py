@@ -36,6 +36,7 @@ class BlockChain:
 
     def preload_locked_blocks(self, headers_iter):
         self._locked_chain = []
+        the_hash = self.parent_hash
         for idx, h in enumerate(headers_iter):
             the_hash = h.hash()
             self._locked_chain.append((the_hash, h.previous_block_hash, h.difficulty))
