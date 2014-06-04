@@ -158,3 +158,9 @@ class Client(object):
 
     def add_block(self, block):
         self.add_blocks([block])
+
+    def blockchain_length(self):
+        return self.blockhandler.block_chain.length()
+
+    def add_got_header_callback(self, callback):
+        pass
