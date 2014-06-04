@@ -113,17 +113,17 @@ class BlockChain:
         return self._longest_chain_cache
 
     def add_headers(self, header_iter):
-        def hash_parent_weight_tuples():
-            for h in header_iter:
-                yield h.hash(), h.previous_block_hash, h.difficulty
+        return self.add_nodes(header_iter)
 
-        return self.add_nodes(hash_parent_weight_tuples())
+    def add_nodes(self, header_iter):
+        hash_to_header = {}
 
-    def add_nodes(self, hash_parent_weight_tuples):
         def iterate():
-            for h, p, w in hash_parent_weight_tuples:
-                self.weight_lookup[h] = w
-                yield h, p
+            for header in header_iter:
+                h = header.hash()
+                self.weight_lookup[h] = header.difficulty
+                hash_to_header[h] = header
+                yield h, header.previous_block_hash
 
         old_longest_chain = self._longest_local_block_chain()
 
@@ -162,6 +162,6 @@ class BlockChain:
             ops.append(op)
             self.hash_to_index_lookup[size-idx-1] = h
         for callback in self.change_callbacks:
-            callback(self, ops)
+            callback(self, ops, hash_to_header)
 
         return ops

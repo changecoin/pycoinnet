@@ -2,6 +2,18 @@
 from pycoinnet.util.BlockChain import BlockChain
 
 
+class FakeBlock(object):
+    def __init__(self, n, previous_block_hash=None):
+        if previous_block_hash is None:
+            previous_block_hash = n - 1
+        self.n = n
+        self.previous_block_hash = previous_block_hash
+        self.difficulty = 1
+
+    def hash(self):
+        return self.n
+
+
 def longest_block_chain(self):
     c = []
     for idx in range(self.length()):
@@ -20,8 +32,8 @@ parent_for_0 = "motherless"
 
 def test_basic():
     BC = BlockChain(parent_for_0)
-    ITEMS = [(i, i-1, 1) for i in range(100)]
-    ITEMS[0] = (0, parent_for_0, 1)
+    ITEMS = [FakeBlock(i) for i in range(100)]
+    ITEMS[0] = FakeBlock(0, parent_for_0)
 
     assert longest_block_chain(BC) == []
     assert BC.length() == 0
@@ -118,12 +130,12 @@ def test_fork():
 
     #parent_for_0 = "motherless"
     BC = BlockChain(parent_for_0)
-    ITEMS = dict((i, (i, i-1, 1)) for i in range(7))
-    ITEMS[0] = (0, parent_for_0, 1)
+    ITEMS = dict((i, FakeBlock(i)) for i in range(7))
+    ITEMS[0] = FakeBlock(0, parent_for_0)
     
 
-    ITEMS.update(dict((i, (i, i-1, 1)) for i in range(301, 306)))
-    ITEMS[301] = (301, 3, 1)
+    ITEMS.update(dict((i, FakeBlock(i)) for i in range(301, 306)))
+    ITEMS[301] = FakeBlock(301, 3)
 
     assert longest_block_chain(BC) == []
     assert BC.locked_length() == 0
