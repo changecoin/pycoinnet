@@ -21,6 +21,8 @@ from pycoinnet.peergroup.InvCollector import InvCollector
 from pycoinnet.util.BlockChainStore import BlockChainStore
 from pycoinnet.util.BlockChain import BlockChain
 
+from pycoinnet.util.BlockChain import _update_q
+
 
 def storage_base_path():
     p = os.path.expanduser("~/.wallet/default/")
@@ -49,11 +51,17 @@ def do_fetch():
     blockhandler = BlockHandler(inv_collector, block_chain, block_chain_store,
                                 should_download_f=should_download_block_f)
 
-    def run_remote():
+    def process_updates(blockchain, ops):
+        for op, block_header, index in ops:
+            print("op: %s %s %d" % (op, block_header, index))
+
+    change_q = asyncio.Queue()
+    block_chain.add_change_callback(process_updates)
+
+    def run_remote(idx):
         change_q = asyncio.Queue()
 
         def do_update(blockchain, ops):
-            from pycoinnet.util.BlockChain import _update_q
             _update_q(change_q, [list(o) for o in ops])
 
         host, port = yield from host_port_q.get()
@@ -81,23 +89,23 @@ def do_fetch():
                     break
                 while True:
                     op, block_header, index = yield from change_q.get()
-                    print("op: %s %s %d" % (op, block_header, index))
                     if change_q.empty():
                         break
+            print("completed %d" % idx)
             return True
         except Exception:
             logging.exception("failed to connect to %s:%d", host, port)
         return False
 
-    def connect_to_remote():
+    def connect_to_remote(idx):
         while True:
-            is_ok = yield from asyncio.wait_for(run_remote(), timeout=None)
+            is_ok = yield from asyncio.wait_for(run_remote(idx), timeout=None)
             if is_ok:
                 break
 
     print("At block %d" % block_chain.length())
 
-    task = asyncio.Task(connect_to_remote())
+    task = asyncio.gather(*[asyncio.Task(connect_to_remote(i)) for i in range(8)])
 
     asyncio.get_event_loop().run_until_complete(task)
 
