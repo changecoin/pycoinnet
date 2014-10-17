@@ -14,9 +14,9 @@ import asyncio
 import os
 import logging
 
-from pycoinnet.InvItem import ITEM_TYPE_BLOCK
+from pycoin.blockchain.BlockChain import BlockChain
 
-from pycoinnet.util.BlockChain import BlockChain
+from pycoinnet.InvItem import ITEM_TYPE_BLOCK
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peer.Fetcher import Fetcher
