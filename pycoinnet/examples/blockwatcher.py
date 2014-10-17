@@ -126,7 +126,7 @@ def main():
     update_last_processed_block(state_dir, last_processed_block)
 
     change_q = asyncio.Queue()
-    from pycoinnet.util.BlockChain import _update_q
+    from pycoin.blockchain.BlockChain import _update_q
 
     def do_update(blockchain, ops):
         _update_q(change_q, [list(o) for o in ops])

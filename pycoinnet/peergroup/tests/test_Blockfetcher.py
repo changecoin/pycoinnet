@@ -47,7 +47,7 @@ def test_get_mined_block():
             if op == 'add':
                 #block = yield from client_2.get_block(the_hash)
                 logging.debug("got block %s" % block.id())
-            
+
     blocks = helper.make_blocks(25)
 
     LOOP = asyncio.get_event_loop()
