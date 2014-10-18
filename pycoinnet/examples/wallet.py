@@ -4,6 +4,8 @@ import asyncio
 import logging
 import os.path
 
+from pycoin.blockchain.BlockChain import BlockChain, _update_q
+
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 from pycoinnet.helpers.networks import MAINNET
 from pycoinnet.helpers.standards import initial_handshake
@@ -19,9 +21,6 @@ from pycoinnet.peergroup.BlockHandler import BlockHandler
 from pycoinnet.peergroup.InvCollector import InvCollector
 
 from pycoinnet.util.BlockChainStore import BlockChainStore
-from pycoinnet.util.BlockChain import BlockChain
-
-from pycoinnet.util.BlockChain import _update_q
 
 
 def storage_base_path():

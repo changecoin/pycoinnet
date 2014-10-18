@@ -72,7 +72,7 @@ class Client(object):
         host_port_q:
             a Queue that is being fed potential places to connect
         should_download_block_f:
-            a function that accepting(block_hash, block_index) and returning a boolean
+            a function accepting(block_hash, block_index) and returning a boolean
             indicating whether that block should be downloaded. Only used during fast-forward.
         block_chain_store:
             usually a BlockChainStore instance
