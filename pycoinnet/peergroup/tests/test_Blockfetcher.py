@@ -7,7 +7,7 @@ import tempfile
 from pycoinnet.examples.Client import Client
 
 from pycoinnet.helpers.networks import TESTNET
-from pycoinnet.peer.tests import helper
+from pycoinnet.util.tests.helper import make_blocks
 from pycoinnet.util.BlockChainStore import BlockChainStore
 
 
@@ -48,7 +48,7 @@ def test_get_mined_block():
                 #block = yield from client_2.get_block(the_hash)
                 logging.debug("got block %s" % block.id())
 
-    blocks = helper.make_blocks(25)
+    blocks = make_blocks(25)
 
     LOOP = asyncio.get_event_loop()
 
