@@ -5,7 +5,7 @@ from pycoinnet.util.BlockChainView import BlockChainView
 
 def test1():
     bcv = BlockChainView()
-    assert bcv.last_block_index() == 0
+    assert bcv.last_block_index() == -1
     assert bcv.block_locator_hashes() == [b'\0' * 32]
 
     blocks = make_blocks(20)
@@ -74,14 +74,6 @@ def make_bcv(node_count):
     nodes = ((i, header.hash(), i) for i, header in enumerate(headers))
     return BlockChainView(nodes)
 
-def ztest_improve_path():
-    import pdb; pdb.set_trace()
-    bcv = make_bcv(0)
-    assert bcv.last_block_index() == 0
-    for count in range(100):
-        report = bcv.do_headers_improve_path([headers[count]])
-        assert report == (count+1, count+1, [headers[count]])
-
 
 def test_winnow():
     hi = BlockChainView._halsies_indices
@@ -98,6 +90,9 @@ def test_winnow():
 def test_tuple_for_index():
     for size in [100, 500, 720, 1000]:
         bcv = make_bcv(size)
+        for i in range(size):
+            index, the_hash, the_work = bcv.tuple_for_index(i)
+            assert index == i
         bcv.winnow()
         for i in range(size):
             index, the_hash, the_work = bcv.tuple_for_index(i)
@@ -126,39 +121,40 @@ def test_tuple_for_hash():
 
 
 def test_block_locator_hashes():
+    for size in [100, 500, 720, 1000]:
+        headers = make_headers(size)
+        nodes = [(i, headers[i].hash(), i) for i in range(size)]
+        bcv = BlockChainView(nodes)
+        blh = bcv.block_locator_hashes()
+        tuples = [bcv.tuple_for_hash(h) for h in blh]
+        indices = [t[0] for t in tuples]
+        assert indices == sorted(bcv.key_index_generator())
+
+        bcv.winnow()
+        blh = bcv.block_locator_hashes()
+        tuples = [bcv.tuple_for_hash(h) for h in blh]
+        indices = [t[0] for t in tuples]
+        assert indices == list(t[0] for t in bcv.node_tuples)
+
+
+def test_improve_path():
     size = 100
     headers = make_headers(size)
-    nodes = [(i, headers[i].hash(), i) for i in range(size)]
-    bcv = BlockChainView(nodes)
-    blh = bcv.block_locator_hashes()
-    tuples = [bcv.tuple_for_hash(h) for h in blh]
-    indices = [t[0] for t in tuples]
-    print(indices)
+    bcv = make_bcv(0)
+    assert bcv.last_block_index() == -1
+    for count in range(100):
+        report = bcv.do_headers_improve_path([headers[count]])
+        assert report == count
+        assert bcv.last_block_index() == count
+    # let's try to extend from 95
+    headers = make_headers(10, headers[95])
 
-    bcv.winnow()
-    blh = bcv.block_locator_hashes()
-    tuples = [bcv.tuple_for_hash(h) for h in blh]
-    indices = [t[0] for t in tuples]
-    print(indices)
-    assert 0
+    for count in range(96, 100):
+        report = bcv.do_headers_improve_path(headers[0:count-95])
+        assert report == False
+    count = 100
+    report = bcv.do_headers_improve_path(headers[0:count-95])
+    assert report == 96
 
-
-"""blockchain_view:
-- tuples of (index, hash, total_difficulty)
-
-- needed here
-
-.last_block_index()
-.block_locator_hashes()
-.got_headers(headers)
-"""
-
-"""
-class BlockChainView:
-    def __init__(self):
-    def last_block_index(self):
-    def tuple_for_index(self, index):
-    def key_index_generator(self):
-    def block_locator_hashes(self):
-    def got_headers(self, headers):
-"""
+    report = bcv.do_headers_improve_path(headers[5:])
+    assert report == 101

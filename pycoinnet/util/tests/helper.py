@@ -11,8 +11,8 @@ DEFAULT_DIFFICULTY = 3000000
 HASH_INITIAL_BLOCK = b'\0' * 32
 
 
-def make_hash(i):
-    return hashlib.sha256(("%d" % i).encode()).digest()
+def make_hash(i, s=b''):
+    return hashlib.sha256(("%d_%s" % (i, s)).encode()).digest()
 
 
 def make_tx(i):
@@ -22,11 +22,15 @@ def make_tx(i):
     return tx
 
 
-def make_headers(count):
-    last_hash = HASH_INITIAL_BLOCK
+def make_headers(count, header=None):
+    if header is None:
+        last_hash = HASH_INITIAL_BLOCK
+    else:
+        last_hash = header.hash()
+    tweak = last_hash
     headers = []
     for i in range(count):
-        headers.append(BlockHeader(version=1, previous_block_hash=last_hash, merkle_root=make_hash(i),
+        headers.append(BlockHeader(version=1, previous_block_hash=last_hash, merkle_root=make_hash(i, tweak),
                        timestamp=GENESIS_TIME+i*600, difficulty=DEFAULT_DIFFICULTY, nonce=i*137))
         last_hash = headers[-1].hash()
     return headers
