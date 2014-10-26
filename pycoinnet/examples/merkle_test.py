@@ -23,16 +23,13 @@ def protocol_factory():
     return BitcoinPeerProtocol(networks.MAINNET["MAGIC_HEADER"])
 
 
-
 def tx_hashes_for_merkle_message(m):
     if m[0] != "merkleblock":
         raise ValueError("wrong message type")
     total_transactions = m[1]["total_transactions"]
     leaf_index_start = (1<<(total_transactions).bit_length())-1
-    node_index_bound = total_transactions + leaf_index_start
 
-    def recurse(leaf_index_start, node_index_bound, node_index, hashes, flags, flag_index, tx_acc):
-        print("node_index: %d" % node_index)
+    def recurse(level_widths, level_index, node_index, hashes, flags, flag_index, tx_acc):
         idx, r = divmod(flag_index, 8)
         mask = (1 << r)
         flag_index += 1
@@ -40,22 +37,19 @@ def tx_hashes_for_merkle_message(m):
             h = hashes.pop()
             return h, flag_index
 
-        if node_index >= leaf_index_start:
+        if level_index == len(level_widths) - 1:
             h = hashes.pop()
             tx_acc.append(h)
             return h, flag_index
 
         # traverse the left
         left_hash, flag_index = recurse(
-            leaf_index_start, node_index_bound, node_index*2+1, hashes, flags, flag_index, tx_acc)
-
-        if node_index == 5:
-            import pdb; pdb.set_trace()
+            level_widths, level_index+1, node_index*2, hashes, flags, flag_index, tx_acc)
 
         # is there a right?
-        if (node_index+1) * 2 < node_index_bound:
+        if node_index*2+1 < level_widths[level_index+1]:
             right_hash, flag_index = recurse(
-                leaf_index_start, node_index_bound, (node_index+1)*2, hashes, flags, flag_index, tx_acc)
+                level_widths, level_index+1, node_index*2+1, hashes, flags, flag_index, tx_acc)
 
             if left_hash == right_hash:
                 raise ValueError("merkle hash has same left and right value at node %d" % node_index)
@@ -64,21 +58,28 @@ def tx_hashes_for_merkle_message(m):
 
         return double_sha256(left_hash + right_hash), flag_index
 
+    level_widths = []
+    count = total_transactions
+    while count > 1:
+        level_widths.append(count)
+        count += 1
+        count //= 2
+    level_widths.append(1)
+    level_widths.reverse()
+
     tx_acc = []
     flags = m[1]["flags"]
     hashes = list(reversed(m[1]["hashes"]))
-    import pdb; pdb.set_trace()
-    left_hash, flag_index = recurse(leaf_index_start, node_index_bound, 0, hashes, flags, 0, tx_acc)
+    left_hash, flag_index = recurse(level_widths, 0, 0, hashes, flags, 0, tx_acc)
 
     if len(hashes) > 0:
         raise ValueError("extra hashes: %s" % hashes)
-    # TODO: check flag_index is large enough and no 1 bits remain
-    import pdb; pdb.set_trace()
+
     idx, r = divmod(flag_index-1, 8)
     if idx != len(flags) - 1:
         raise ValueError("not enough flags consumed")
 
-    if flags[idx] > ((1<<r)-1):
+    if flags[idx] > (1<<(r+1))-1:
         raise ValueError("unconsumed 1 flag bits set")
 
     if left_hash != m[1]["header"].merkle_root:
@@ -136,10 +137,14 @@ def main():
     peer.send_msg("filterload", filter=the_bytes, hash_function_count=hfc, tweak=tweak, flags=0)
     h = h2b_rev("0000000000000000186831e8e00586e763deff7f6bc04436b0e988523f7fcf16")
     h = h2b_rev("0000000000bc76619da94d92e0fb82570141a827603c0f1dfb6fe06ee8c96c79")
-    h = h2b_rev("00000000001a2edf34b50bedfa2332bc6d9f47ae9bde9b038d11469006d5b114")
+    #h = h2b_rev("00000000001a2edf34b50bedfa2332bc6d9f47ae9bde9b038d11469006d5b114")
 
     items = [InvItem(ITEM_TYPE_MERKEL_BLOCK, h)]
     peer.send_msg("getdata", items=items)
+    m = yield_from(next_message())
+    print(m)
+    txs = tx_hashes_for_merkle_message(m)
+    print(txs)
     while 1:
         m = yield_from(next_message())
         print(m)
@@ -149,6 +154,5 @@ def main():
     from pycoin.serialize import b2h
     
     print(b2h(f.getvalue()))
-    tx_hashes_for_merkle_message(m)
 
-t()
+main()

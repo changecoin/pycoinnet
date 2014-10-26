@@ -43,12 +43,11 @@ MESSAGE_STRUCTURES = {
     #'reply': obsolete
     'ping': "nonce:Q",
     'pong': "nonce:Q",
-    'filterload': "filter:[1] hash_function_count:L tweak:L flags:1",
+    'filterload': "filter:[1] hash_function_count:L tweak:L flags:b",
     'filteradd': "data:[1]",
     'filterclear': "",
     'merkleblock': (
-        "version:L prev_block:# merkle_root:# timestamp:L"
-        " bits:L nonce:L total_transactions:L hashes:[#] flags:1"
+        "header:z total_transactions:L hashes:[#] flags:[1]"
     ),
     'alert': "payload:S signature:S",
 }
@@ -96,7 +95,7 @@ def _make_parse_from_data():
             ("T", (Tx.parse, lambda f, tx: tx.stream(f))),
             ("B", (Block.parse, lambda f, block: block.stream(f))),
             ("z", (BlockHeader.parse, lambda f, blockheader: blockheader.stream(f))),
-            ("b", (lambda f: struct.unpack("?", f.read(1))[0], lambda f, b: f.write(struct.pack("?", b)))),
+            ("1", (lambda f: struct.unpack("B", f.read(1))[0], lambda f, b: f.write(struct.pack("B", b)))),
         ]
         bitcoin_streamer.BITCOIN_STREAMER.register_functions(more_parsing)
 

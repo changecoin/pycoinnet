@@ -156,4 +156,4 @@ class BlockChainView:
 
     def __repr__(self):
         t = self.last_block_tuple()
-        return "<BlockChainView tip: %d (%s...)>" % (t[0], b2h_rev(t[1])[:20])
+        return "<BlockChainView tip: %d (%s...)>" % (t[0], b2h_rev(t[1])[:32])
