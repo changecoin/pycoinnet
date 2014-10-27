@@ -4,13 +4,14 @@ import io
 import struct
 
 from pycoin.block import Block, BlockHeader
-from pycoin.serialize import bitcoin_streamer
+from pycoin.encoding import double_sha256
+from pycoin.serialize import b2h_rev, bitcoin_streamer
 from pycoin.tx.Tx import Tx
 
 from pycoinnet.InvItem import InvItem
 from pycoinnet.PeerAddress import PeerAddress
 
-### definitions of message structures and types
+# definitions of message structures and types
 # L: 4 byte long integer
 # Q: 8 byte long integer
 # S: unicode string
@@ -38,9 +39,9 @@ MESSAGE_STRUCTURES = {
     'headers': "headers:[zI]",
     'getaddr': "",
     'mempool': "",
-    #'checkorder': obsolete
-    #'submitorder': obsolete
-    #'reply': obsolete
+    # 'checkorder': obsolete
+    # 'submitorder': obsolete
+    # 'reply': obsolete
     'ping': "nonce:Q",
     'pong': "nonce:Q",
     'filterload': "filter:[1] hash_function_count:L tweak:L flags:b",
@@ -66,6 +67,69 @@ def _message_parsers():
     return dict((k, _make_parser(v)) for k, v in MESSAGE_STRUCTURES.items())
 
 
+def fixup_merkleblock(d, f):
+    def recurse(level_widths, level_index, node_index, hashes, flags, flag_index, tx_acc):
+        idx, r = divmod(flag_index, 8)
+        mask = (1 << r)
+        flag_index += 1
+        if flags[idx] & mask == 0:
+            h = hashes.pop()
+            return h, flag_index
+
+        if level_index == len(level_widths) - 1:
+            h = hashes.pop()
+            tx_acc.append(h)
+            return h, flag_index
+
+        # traverse the left
+        left_hash, flag_index = recurse(
+            level_widths, level_index+1, node_index*2, hashes, flags, flag_index, tx_acc)
+
+        # is there a right?
+        if node_index*2+1 < level_widths[level_index+1]:
+            right_hash, flag_index = recurse(
+                level_widths, level_index+1, node_index*2+1, hashes, flags, flag_index, tx_acc)
+
+            if left_hash == right_hash:
+                raise ValueError("merkle hash has same left and right value at node %d" % node_index)
+        else:
+            right_hash = left_hash
+
+        return double_sha256(left_hash + right_hash), flag_index
+
+    level_widths = []
+    count = d["total_transactions"]
+    while count > 1:
+        level_widths.append(count)
+        count += 1
+        count //= 2
+    level_widths.append(1)
+    level_widths.reverse()
+
+    tx_acc = []
+    flags = d["flags"]
+    hashes = list(reversed(d["hashes"]))
+    left_hash, flag_index = recurse(level_widths, 0, 0, hashes, flags, 0, tx_acc)
+
+    if len(hashes) > 0:
+        raise ValueError("extra hashes: %s" % hashes)
+
+    idx, r = divmod(flag_index-1, 8)
+    if idx != len(flags) - 1:
+        raise ValueError("not enough flags consumed")
+
+    if flags[idx] > (1 << (r+1))-1:
+        raise ValueError("unconsumed 1 flag bits set")
+
+    if left_hash != d["header"].merkle_root:
+        raise ValueError(
+            "merkle root %s does not match calculated hash %s" % (
+                b2h_rev(d["header"].merkle_root), b2h_rev(left_hash)))
+
+    d["tx_hashes"] = tx_acc
+    return d
+
+
 def _message_fixups():
     def fixup_version(d, f):
         if d["version"] >= 70001:
@@ -83,7 +147,7 @@ def _message_fixups():
         d["alert_info"] = d1
         return d
 
-    return dict(version=fixup_version, alert=fixup_alert)
+    return dict(version=fixup_version, alert=fixup_alert, merkleblock=fixup_merkleblock)
 
 
 def _make_parse_from_data():
