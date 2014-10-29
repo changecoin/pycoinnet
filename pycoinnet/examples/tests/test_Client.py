@@ -4,11 +4,10 @@ import logging
 import os
 import tempfile
 
-from pycoinnet.examples.Client import Client
+from pycoinnet.peergroup.Blockfetcher import Blockfetcher
 
 from pycoinnet.helpers.networks import TESTNET
 from pycoinnet.util.tests.helper import make_blocks
-from pycoinnet.util.BlockChainStore import BlockChainStore
 
 
 LOG_FORMAT = ('%(asctime)s [%(process)d] [%(levelname)s] '
@@ -23,6 +22,8 @@ def test_get_mined_block():
     # A should catch up all 20 blocks
     # A mines a new block
     # B should acquire it from A
+
+    import pdb; pdb.set_trace()
 
     asyncio.tasks._DEBUG = True
     logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
@@ -42,10 +43,11 @@ def test_get_mined_block():
             client_2_has_20_blocks_future.set_result(blockchain.length())
         if not client_2_has_25_blocks_future.done() and blockchain.length() >= 25:
             client_2_has_25_blocks_future.set_result(blockchain.length())
-        return
+        #return
+        import pdb; pdb.set_trace()
         for op, the_hash, idx in ops:
             if op == 'add':
-                #block = yield from client_2.get_block(the_hash)
+                block = yield from client_2.get_block(the_hash)
                 logging.debug("got block %s" % block.id())
 
     blocks = make_blocks(25)
@@ -53,17 +55,17 @@ def test_get_mined_block():
     LOOP = asyncio.get_event_loop()
 
     with tempfile.TemporaryDirectory() as state_dir:
+        logging.info("state dir: %s", state_dir)
 
         host_port_q_1 = asyncio.Queue()
         def should_download_block_f(block_hash, block_index):
-            import pdb; pdb.set_trace()
             return True
         block_chain_store_1 = BlockChainStore(os.path.join(state_dir, "1"))
-        client_1 = Client(TESTNET, host_port_q_1, should_download_block_f, block_chain_store_1, do_update, server_port=9110)
+        client_1 = Client(TESTNET, should_download_block_f, block_chain_store_1, do_update, host_port_q=host_port_q_1, server_port=9110)
 
         host_port_q_2 = asyncio.Queue()
         block_chain_store_2 = BlockChainStore(os.path.join(state_dir, "2"))
-        client_2 = Client(TESTNET, host_port_q_2, should_download_block_f, block_chain_store_2, do_update_2, server_port=9115)
+        client_2 = Client(TESTNET, should_download_block_f, block_chain_store_2, do_update_2, host_port_q=host_port_q_2, server_port=9115)
 
         def add_blocks_1():
             for b in blocks[:20]:
