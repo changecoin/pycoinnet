@@ -1,9 +1,15 @@
 """
 TxHandler
 
-This class should be instantiated once per client.
+This class should be instantiated once per PeerGroup.
 
 It takes an InvCollector and a TxStore, and an optional Tx validator.
+
+A TxStore is a dictionary-like object that responds to:
+    .get
+    .values
+    .__setitem__ (for txstore[key] = v)
+    .__contains__ (for "in")
 
 When a new Tx object is noted by the InvCollector, this object will
 fetch it, validate it, then store it in the TxStore and tell the
