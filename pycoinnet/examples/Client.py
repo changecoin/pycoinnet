@@ -26,6 +26,7 @@ from pycoinnet.peergroup.Blockfetcher import Blockfetcher
 from pycoinnet.peergroup.BlockHandler import BlockHandler
 from pycoinnet.peergroup.InvCollector import InvCollector
 
+from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.helpers.standards import install_pingpong_manager
 from pycoinnet.helpers.standards import manage_connection_count
@@ -64,16 +65,16 @@ def show_connection_info(connection_info_q):
 
 class Client(object):
 
-    def __init__(self, network, host_port_q, should_download_block_f, block_chain_store,
-                 blockchain_change_callback, server_port=9999):
+    def __init__(self, network, should_prefetch_block_f, block_chain_store,
+                 blockchain_change_callback, host_port_q=None, server_port=9999):
         """
         network:
             a value from pycoinnet.helpers.networks
         host_port_q:
             a Queue that is being fed potential places to connect
-        should_download_block_f:
+        should_prefetch_block_f:
             a function accepting(block_hash, block_index) and returning a boolean
-            indicating whether that block should be downloaded. Only used during fast-forward.
+            indicating whether that block should be prefetched. Only used during fast-forward.
         block_chain_store:
             usually a BlockChainStore instance
         blockchain_change_callback:
@@ -82,6 +83,9 @@ class Client(object):
             of tuples of the form (op, block_hash, block_index) where op is one of "add" or "remove",
             block_hash is a binary block hash, and block_index is an integer index number.
         """
+
+        if host_port_q is None:
+            host_port_q = dns_bootstrap_host_port_q(network)
 
         block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)
 
@@ -102,7 +106,7 @@ class Client(object):
         self.rotate_task = asyncio.Task(_rotate(self.block_store))
 
         self.blockhandler = BlockHandler(self.inv_collector, block_chain, self.block_store,
-                                         should_download_f=should_download_block_f)
+                                         should_download_f=should_prefetch_block_f)
 
         block_chain.add_change_callback(blockchain_change_callback)
 
