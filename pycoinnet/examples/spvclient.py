@@ -54,7 +54,8 @@ class SPVClient(object):
     merkleblocks_for_headers
     """
 
-    def __init__(self, network, initial_blockchain_view, bloom_filter, host_port_q=None, server_port=9999):
+    def __init__(self, network, initial_blockchain_view, bloom_filter, merkle_block_index_queue,
+                 host_port_q=None, server_port=9999):
         """
         network:
             a value from pycoinnet.helpers.networks
@@ -79,12 +80,13 @@ class SPVClient(object):
         self.blockchain_view = initial_blockchain_view
         self.bloom_filter = bloom_filter
 
-        self.merkle_block_futures = asyncio.Queue()
+        self.merkle_block_futures = asyncio.Queue(maxsize=2000)
+        self.feed_task = asyncio.Task(self.feed_merkle_blocks(merkle_block_index_queue))
 
         self.blockfetcher = Blockfetcher()
         self.inv_collector = InvCollector()
 
-        self.getheaders_add_peer = getheaders_add_peer_f(self.blockchain_view, self.got_headers_reorg)
+        self.getheaders_add_peer = getheaders_add_peer_f(self.blockchain_view, self.handle_reorg)
 
         self.nonce = int.from_bytes(os.urandom(8), byteorder="big")
         self.subversion = "/Notoshi/".encode("utf8")
@@ -137,20 +139,17 @@ class SPVClient(object):
         return [self.blockfetcher.get_merkle_block_future(h, idx) for idx, h in enumerate(headers)]
 
     @asyncio.coroutine
-    def feed_merkle_blocks(self):
+    def feed_merkle_blocks(self, merkle_block_index_queue):
         while 1:
-            future = yield from self.merkle_block_futures.get()
-            merkle_block, index = yield from future
-            yield from self.merkle_block_index_queue.put([merkle_block, index])
+            index, future = yield from self.merkle_block_futures.get()
+            merkle_block = yield from future
+            yield from merkle_block_index_queue.put([merkle_block, index])
 
     @asyncio.coroutine
-    def got_headers_reorg(self, block_number, headers):
-        futures = [self.blockfetcher.get_merkle_block_future(h.hash(), idx) for idx, h in enumerate(headers)]
-        merkle_blocks = []
-        for f in futures:
-            mb = yield from f
-            merkle_blocks.append(mb)
-        import pdb; pdb.set_trace()
+    def handle_reorg(self, block_number, headers):
+        for idx, h in enumerate(headers):
+            yield from self.merkle_block_futures.put(
+                [block_number+idx, self.blockfetcher.get_merkle_block_future(h.hash(), block_number+idx)])
 
 
 def main():
@@ -176,7 +175,15 @@ def main():
     #    bloom_filter.set_bit(i)
     spendable = Spendable(0, b'', h2b_rev("0437cd7f8525ceed2324359c2d0ba26006d92d856a9c20fa0241106ee5a597c9"), 0)
     bloom_filter.add_spendable(spendable)
-    spv = SPVClient(network, initial_blockchain_view, bloom_filter, host_port_q)
+    merkle_block_index_queue = asyncio.Queue()
+    spv = SPVClient(network, initial_blockchain_view, bloom_filter, merkle_block_index_queue, host_port_q)
+
+    def fetch(merkle_block_index_queue):
+        while True:
+            merkle_block, index = yield from merkle_block_index_queue.get()
+            logging.info("block #%d %s with %d transactions", index, merkle_block.id(), len(merkle_block.txs))
+
+    t = asyncio.Task(fetch(merkle_block_index_queue))
 
     asyncio.get_event_loop().run_forever()
 

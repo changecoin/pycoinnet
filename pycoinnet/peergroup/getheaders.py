@@ -58,7 +58,6 @@ def getheaders_add_peer_f(blockchain_view, improved_blockchain_view_callback_f):
                 start_time = time.time()
                 block_locator_hashes = blockchain_view.block_locator_hashes()
                 logging.debug("block_locator_hashes: %s", block_locator_hashes)
-                import pdb; pdb.set_trace()
                 try:
                     headers = yield from asyncio.wait_for(do_get_headers(peer, block_locator_hashes), timeout=10)
                 except EOFError:
@@ -94,11 +93,8 @@ def getheaders_add_peer_f(blockchain_view, improved_blockchain_view_callback_f):
                         peer_queue.put_nowait((priority, (peer, lbi, rate_dict)))
                 else:
                     logging.debug("improved_blockchain_view_callback_f with block number %d and %d headers", block_number, len(reorg_headers))
-                    import pdb; pdb.set_trace()
                     blockchain_view.winnow()
-                    import pdb; pdb.set_trace()
                     yield from improved_blockchain_view_callback_f(block_number, reorg_headers)
-                    import pdb; pdb.set_trace()
                     reorg_headers = []
                     peer_queue.put_nowait((priority, (peer, lbi, rate_dict)))
 
