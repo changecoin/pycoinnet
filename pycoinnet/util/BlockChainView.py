@@ -1,15 +1,5 @@
-
 from pycoin.serialize import b2h_rev
 
-"""blockchain_view:
-- tuples of (index, hash, total_work)
-
-- needed here
-
-.last_block_index()
-.block_locator_hashes()
-.got_headers(headers)
-"""
 
 HASH_INITIAL_BLOCK = b'\0' * 32
 GENESIS_TUPLE = (-1, HASH_INITIAL_BLOCK, 0)
@@ -139,8 +129,9 @@ class BlockChainView:
         for idx, h in enumerate(headers):
             if h.previous_block_hash != expected_prior_hash:
                 raise ValueError(
-                    "headers are not properly linked: no known block with hash %s" % b2h_rev(h.previous_block_hash))
-            total_work += 1  ## TODO: make this difficulty/work instead of path size
+                    "headers are not properly linked: no known block with hash %s" % b2h_rev(
+                        h.previous_block_hash))
+            total_work += 1  # TODO: make this difficulty/work instead of path size
             expected_prior_hash = h.hash()
             tuples.append((idx + new_start_idx, expected_prior_hash, total_work))
         if total_work <= self.last_block_tuple()[-1]:

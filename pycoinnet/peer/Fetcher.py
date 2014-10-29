@@ -58,7 +58,6 @@ class Fetcher:
         try:
             while True:
                 name, data = yield from next_message()
-                #import pdb; pdb.set_trace()
                 ITEM_LOOKUP = dict(tx="tx", block="block", merkleblock="header")
                 if name in ITEM_LOOKUP:
                     item = data[ITEM_LOOKUP[name]]
