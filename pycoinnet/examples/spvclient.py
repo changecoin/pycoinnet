@@ -55,22 +55,18 @@ class SPVClient(object):
     """
 
     def __init__(self, network, initial_blockchain_view, bloom_filter, merkle_block_index_queue,
-                 host_port_q=None, server_port=9999):
+                 host_port_q=None):
         """
         network:
             a value from pycoinnet.helpers.networks
+        initial_blockchain_view:
+            BlockChainView instance which is update automatically
+        bloom_filter:
+            the filter sent to remotes
+        merkle_block_index_queue:
+            a Queue which is fed with (merkleblock, index) items which need to be processed
         host_port_q:
             a Queue that is being fed potential places to connect
-        should_prefetch_block_f:
-            a function accepting(block_hash, block_index) and returning a boolean
-            indicating whether that block should be prefetched. Only used during fast-forward.
-        block_chain_store:
-            usually a BlockChainStore instance
-        blockchain_change_callback:
-            a callback that expects (blockchain, list_of_ops) that is invoked whenever the
-            block chain is updated; blockchain is a BlockChain object and list_of_ops is a pair
-            of tuples of the form (op, block_hash, block_index) where op is one of "add" or "remove",
-            block_hash is a binary block hash, and block_index is an integer index number.
         """
 
         if host_port_q is None:
@@ -95,7 +91,7 @@ class SPVClient(object):
         def run_peer(peer, fetcher, getheaders_add_peer, blockfetcher, inv_collector):
             yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
             version_parameters = version_data_for_peer(
-                peer, local_port=(server_port or 0), last_block_index=max(0, self.blockchain_view.last_block_index()), nonce=self.nonce,
+                peer, local_port=0, last_block_index=max(0, self.blockchain_view.last_block_index()), nonce=self.nonce,
                 subversion=self.subversion)
             version_data = yield from initial_handshake(peer, version_parameters)
             filter_bytes, hash_function_count, tweak = self.bloom_filter.filter_load_params()
@@ -132,9 +128,6 @@ class SPVClient(object):
             except OSError as ex:
                 logging.info("can't listen on port %d", server_port)
 
-        if server_port:
-            self.server_task = asyncio.Task(run_listener())
-
     def merkleblock_futures_for_headers(self, block_number, headers):
         return [self.blockfetcher.get_merkle_block_future(h, idx) for idx, h in enumerate(headers)]
 
@@ -162,8 +155,6 @@ def main():
     from pycoinnet.bloom import BloomFilter
     from pycoin.tx import Spendable
     from pycoin.serialize import h2b_rev, h2b
-    host_port_q = asyncio.Queue()
-    host_port_q.put_nowait(("71.84.28.2", 8333))
     network = MAINNET
     initial_blockchain_view = BlockChainView()
     bloom_filter = BloomFilter(2048, hash_function_count=8, tweak=3)
@@ -176,7 +167,7 @@ def main():
     spendable = Spendable(0, b'', h2b_rev("0437cd7f8525ceed2324359c2d0ba26006d92d856a9c20fa0241106ee5a597c9"), 0)
     bloom_filter.add_spendable(spendable)
     merkle_block_index_queue = asyncio.Queue()
-    spv = SPVClient(network, initial_blockchain_view, bloom_filter, merkle_block_index_queue, host_port_q)
+    spv = SPVClient(network, initial_blockchain_view, bloom_filter, merkle_block_index_queue, host_port_q=None)
 
     def fetch(merkle_block_index_queue):
         while True:
