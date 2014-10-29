@@ -14,16 +14,11 @@ import asyncio
 import os
 import logging
 
-from pycoin.blockchain.BlockChain import BlockChain
-
-from pycoinnet.InvItem import ITEM_TYPE_BLOCK
-
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 from pycoinnet.peer.Fetcher import Fetcher
 
 from pycoinnet.peergroup.getheaders import getheaders_add_peer_f
 from pycoinnet.peergroup.Blockfetcher import Blockfetcher
-#from pycoinnet.peergroup.BlockHandler import BlockHandler
 from pycoinnet.peergroup.InvCollector import InvCollector
 
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
@@ -31,8 +26,6 @@ from pycoinnet.helpers.standards import initial_handshake
 from pycoinnet.helpers.standards import install_pingpong_manager
 from pycoinnet.helpers.standards import manage_connection_count
 from pycoinnet.helpers.standards import version_data_for_peer
-
-#from pycoinnet.util.TwoLevelDict import TwoLevelDict
 
 
 @asyncio.coroutine
@@ -90,15 +83,17 @@ class SPVClient(object):
         @asyncio.coroutine
         def run_peer(peer, fetcher, getheaders_add_peer, blockfetcher, inv_collector):
             yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
+            last_block_index = max(0, self.blockchain_view.last_block_index())
             version_parameters = version_data_for_peer(
-                peer, local_port=0, last_block_index=max(0, self.blockchain_view.last_block_index()), nonce=self.nonce,
+                peer, local_port=0, last_block_index=last_block_index, nonce=self.nonce,
                 subversion=self.subversion)
             version_data = yield from initial_handshake(peer, version_parameters)
             filter_bytes, hash_function_count, tweak = self.bloom_filter.filter_load_params()
             # TODO: figure out flags
             flags = 0
-            peer.send_msg("filterload", filter=filter_bytes, hash_function_count=hash_function_count,
-                                        tweak=tweak, flags=flags)
+            peer.send_msg(
+                "filterload", filter=filter_bytes, hash_function_count=hash_function_count,
+                tweak=tweak, flags=flags)
             last_block_index = version_data["last_block_index"]
             getheaders_add_peer(peer, last_block_index)
             blockfetcher.add_peer(peer, fetcher, last_block_index)
@@ -115,18 +110,6 @@ class SPVClient(object):
 
         self.connection_info_q = manage_connection_count(host_port_q, create_protocol_callback, 8)
         self.show_task = asyncio.Task(show_connection_info(self.connection_info_q))
-
-        # listener
-        @asyncio.coroutine
-        def run_listener():
-            abstract_server = None
-            future_peer = asyncio.Future()
-            try:
-                abstract_server = yield from asyncio.get_event_loop().create_server(
-                    protocol_factory=create_protocol_callback, port=server_port)
-                return abstract_server
-            except OSError as ex:
-                logging.info("can't listen on port %d", server_port)
 
     def merkleblock_futures_for_headers(self, block_number, headers):
         return [self.blockfetcher.get_merkle_block_future(h, idx) for idx, h in enumerate(headers)]
@@ -146,7 +129,8 @@ class SPVClient(object):
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG,
+    logging.basicConfig(
+        level=logging.DEBUG,
         format=('%(asctime)s [%(process)d] [%(levelname)s] '
                 '%(filename)s:%(lineno)d %(message)s'))
 
@@ -159,20 +143,21 @@ def main():
     initial_blockchain_view = BlockChainView()
     bloom_filter = BloomFilter(2048, hash_function_count=8, tweak=3)
     bloom_filter.add_address("14gZfnEn8Xd3ofkjr5s7rKoC3bi8J4Yfyy")
-    #bloom_filter.add_address("1GL6i1ty44RnERgqYLKS1CrnhrahW4JhQZ")
+    # bloom_filter.add_address("1GL6i1ty44RnERgqYLKS1CrnhrahW4JhQZ")
     bloom_filter.add_item(h2b("0478abb18c0c7c95348fa77eb5fd43ce963e450d797cf4878894230ca528e6c8e866c3"
                               "8ad93746e04f2161a01787c82a858ee24940e9a06e41fddb3494dfe29380"))
-    #for i in range(2048*8):
-    #    bloom_filter.set_bit(i)
-    spendable = Spendable(0, b'', h2b_rev("0437cd7f8525ceed2324359c2d0ba26006d92d856a9c20fa0241106ee5a597c9"), 0)
+    spendable = Spendable(
+        0, b'', h2b_rev("0437cd7f8525ceed2324359c2d0ba26006d92d856a9c20fa0241106ee5a597c9"), 0)
     bloom_filter.add_spendable(spendable)
     merkle_block_index_queue = asyncio.Queue()
-    spv = SPVClient(network, initial_blockchain_view, bloom_filter, merkle_block_index_queue, host_port_q=None)
+    spv = SPVClient(
+        network, initial_blockchain_view, bloom_filter, merkle_block_index_queue, host_port_q=None)
 
     def fetch(merkle_block_index_queue):
         while True:
             merkle_block, index = yield from merkle_block_index_queue.get()
-            logging.info("block #%d %s with %d transactions", index, merkle_block.id(), len(merkle_block.txs))
+            logging.info(
+                "block #%d %s with %d transactions", index, merkle_block.id(), len(merkle_block.txs))
 
     t = asyncio.Task(fetch(merkle_block_index_queue))
 
