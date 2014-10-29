@@ -89,7 +89,6 @@ class BlockChainView:
             the_hash = self.tuple_for_index(index)[1]
             if len(l) == 0 or the_hash != l[-1]:
                 l.append(the_hash)
-        l.reverse()
         return l
 
     @staticmethod

@@ -8,7 +8,7 @@ from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 from pycoinnet.helpers.standards import version_data_for_peer
 from pycoinnet.helpers.standards import initial_handshake
 
-from pycoinnet.InvItem import InvItem, ITEM_TYPE_MERKEL_BLOCK
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_MERKLEBLOCK
 
 from pycoinnet.peer.BitcoinPeerProtocol import BitcoinPeerProtocol
 
@@ -112,7 +112,7 @@ def main():
     h = h2b_rev("0000000000bc76619da94d92e0fb82570141a827603c0f1dfb6fe06ee8c96c79")
     h = h2b_rev("00000000000000000fe003fb653d25916a0c58bf952c5412664e5fa7063761fd")
 
-    items = [InvItem(ITEM_TYPE_MERKEL_BLOCK, h)]
+    items = [InvItem(ITEM_TYPE_MERKLEBLOCK, h)]
     peer.send_msg("getdata", items=items)
     while 1:
         m = yield_from(next_message())
