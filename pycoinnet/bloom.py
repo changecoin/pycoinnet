@@ -10,7 +10,7 @@ from pycoin.encoding import bitcoin_address_to_hash160_sec
 LOG_2 = math.log(2)
 
 def filter_size_required(element_count, false_positive_probability):
-    return int(((-1 / pow(LOG_2, 2) * element_count * math.log(false_positive_probability))+7) // 8)
+    return min(36000, int(((-1 / pow(LOG_2, 2) * element_count * math.log(false_positive_probability))+7) // 8))
 
 
 def hash_function_count_required(filter_size, element_count):
