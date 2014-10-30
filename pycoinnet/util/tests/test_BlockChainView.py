@@ -128,12 +128,14 @@ def test_block_locator_hashes():
         blh = bcv.block_locator_hashes()
         tuples = [bcv.tuple_for_hash(h) for h in blh]
         indices = [t[0] for t in tuples]
+        indices.sort()
         assert indices == sorted(bcv.key_index_generator())
 
         bcv.winnow()
         blh = bcv.block_locator_hashes()
         tuples = [bcv.tuple_for_hash(h) for h in blh]
         indices = [t[0] for t in tuples]
+        indices.sort()
         assert indices == list(t[0] for t in bcv.node_tuples)
 
 
