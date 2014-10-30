@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os.path
+import sqlite3
 
 from pycoin.blockchain.BlockChain import BlockChain, _update_q
 
@@ -21,6 +22,16 @@ from pycoinnet.peergroup.BlockHandler import BlockHandler
 from pycoinnet.peergroup.InvCollector import InvCollector
 
 from pycoinnet.util.BlockChainStore import BlockChainStore
+from pycoinnet.util.BlockChainView import BlockChainView
+
+from pycoinnet.examples.spvclient import SPVClient
+from pycoinnet.bloom import BloomFilter, filter_size_required, hash_function_count_required
+
+#def filter_size_required(element_count, false_positive_probability):
+#def hash_function_count_required(filter_size, element_count):
+
+from pycoin.wallet.SQLite3Persistence import SQLite3Persistence
+from pycoin.wallet.SQLite3Wallet import SQLite3Wallet
 
 
 def storage_base_path():
@@ -30,83 +41,52 @@ def storage_base_path():
     return p
 
 
+class Keychain(object):
+    def __init__(self, addresses):
+        self.interested_addresses = set(addresses)
+
+    def is_spendable_interesting(self, address):
+        return address in self.interested_addresses
+
+
 def do_fetch():
     network = MAINNET
-    host_port_q = dns_bootstrap_host_port_q(network)
 
-    should_download_block_f = lambda *args, **kwargs: True
-    state_dir = storage_base_path()
-    block_chain_store = BlockChainStore(state_dir)
+    addresses = [a[:-1] for a in open(os.path.join(storage_base_path(), "watch_addresses")).readlines()]
 
-    block_chain = BlockChain(did_lock_to_index_f=block_chain_store.did_lock_to_index)
+    keychain = Keychain(addresses)
 
-    block_chain.preload_locked_blocks(block_chain_store.headers())
+    sql_db = sqlite3.Connection(os.path.join(storage_base_path(), "wallet.db"))
+    persistence = SQLite3Persistence(sql_db)
+    wallet = SQLite3Wallet(keychain, persistence, desired_spendable_count=20)
 
-    blockfetcher = Blockfetcher()
-    inv_collector = InvCollector()
+    initial_blockchain_view = BlockChainView()
 
-    fast_forward_add_peer = fast_forwarder_add_peer_f(block_chain)
+    element_count = len(addresses)
+    false_positive_probability = 0.00001
 
-    blockhandler = BlockHandler(inv_collector, block_chain, block_chain_store,
-                                should_download_f=should_download_block_f)
+    filter_size = filter_size_required(element_count, false_positive_probability)
+    hash_function_count = hash_function_count_required(filter_size, element_count)
+    bloom_filter = BloomFilter(filter_size, hash_function_count=hash_function_count, tweak=1)
 
-    def process_updates(blockchain, ops):
-        for op, block_header, index in ops:
-            print("op: %s %s %d" % (op, block_header, index))
+    for a in addresses:
+        bloom_filter.add_address(a)
 
-    change_q = asyncio.Queue()
-    block_chain.add_change_callback(process_updates)
+    merkle_block_index_queue = asyncio.Queue()
+    spv = SPVClient(
+        network, initial_blockchain_view, bloom_filter, merkle_block_index_queue, host_port_q=None)
 
-    def run_remote(idx):
-        change_q = asyncio.Queue()
-
-        def do_update(blockchain, ops):
-            _update_q(change_q, [list(o) for o in ops])
-
-        host, port = yield from host_port_q.get()
-        logging.debug("got %s:%d from connection pool", host, port)
-        logging.info("connecting to %s:%d" % (host, port))
-        try:
-            transport, peer = yield from asyncio.get_event_loop().create_connection(
-                lambda: BitcoinPeerProtocol(network["MAGIC_HEADER"]), host=host, port=port)
-            install_pingpong_manager(peer)
-            fetcher = Fetcher(peer)
-            logging.info("connected (tcp) to %s:%d", host, port)
-            yield from asyncio.wait_for(peer.connection_made_future, timeout=None)
-            version_parameters = version_data_for_peer(
-                peer, local_port=0, last_block_index=block_chain.length())
-            version_data = yield from initial_handshake(peer, version_parameters)
-            last_block_index = version_data["last_block_index"]
-            print("remote claims block chain of size %d" % last_block_index)
-            fast_forward_add_peer(peer, last_block_index)
-            blockfetcher.add_peer(peer, fetcher, last_block_index)
-            inv_collector.add_peer(peer)
-            blockhandler.add_peer(peer)
-            block_chain.add_change_callback(do_update)
-            while True:
-                if block_chain.length() >= last_block_index:
-                    break
-                while True:
-                    op, block_header, index = yield from change_q.get()
-                    if change_q.empty():
-                        break
-            print("completed %d" % idx)
-            return True
-        except Exception:
-            logging.exception("failed to connect to %s:%d", host, port)
-        return False
-
-    def connect_to_remote(idx):
+    @asyncio.coroutine
+    def process_updates(merkle_block_index_queue):
         while True:
-            is_ok = yield from asyncio.wait_for(run_remote(idx), timeout=None)
-            if is_ok:
-                break
+            merkle_block, index = yield from merkle_block_index_queue.get()
+            if len(merkle_block.txs) > 0:
+                print("got block %06d: %s... with %d transactions" % (index, merkle_block.id()[:32], len(merkle_block.txs)))
+            elif index % 1000 == 0:
+                print("at block %06d" % index)
 
-    print("At block %d" % block_chain.length())
-
-    task = asyncio.gather(*[asyncio.Task(connect_to_remote(i)) for i in range(8)])
-
-    asyncio.get_event_loop().run_until_complete(task)
+    t = asyncio.Task(process_updates(merkle_block_index_queue))
+    asyncio.get_event_loop().run_forever()
 
 
 def main():
