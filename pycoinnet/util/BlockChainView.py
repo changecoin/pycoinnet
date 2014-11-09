@@ -1,4 +1,6 @@
-from pycoin.serialize import b2h_rev
+import json
+
+from pycoin.serialize import b2h_rev, h2b_rev
 
 
 HASH_INITIAL_BLOCK = b'\0' * 32
@@ -18,9 +20,18 @@ class BlockChainView:
         self._add_tuples(node_tuples)
 
     def _add_tuples(self, node_tuples):
-        nt = set(node_tuples)
+        nt = set(tuple(t) for t in node_tuples)
         self.node_tuples = sorted(set(self.node_tuples).union(nt))
         self.hash_to_index.update(dict((h, idx) for idx, h, tw in nt))
+
+    def as_json(self):
+        return json.dumps([[t[0], b2h_rev(t[1]), t[2]] for t in self.node_tuples])
+
+    @classmethod
+    def from_json(class_, the_json):
+        def from_tuple(t):
+            return [t[0], h2b_rev(t[1]), t[2]]
+        return BlockChainView(node_tuples=[from_tuple(t) for t in json.loads(the_json)])
 
     def last_block_tuple(self):
         if len(self.node_tuples) == 0:

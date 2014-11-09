@@ -160,3 +160,15 @@ def test_improve_path():
 
     report = bcv.do_headers_improve_path(headers[5:])
     assert report == 101
+
+
+def test_json_encoding():
+    bcv = BlockChainView()
+    j = bcv.as_json()
+    assert j == '[]'
+    for size in (30, 100, 750):
+        bcv = make_bcv(30)
+        bcv.winnow()
+        j = bcv.as_json()
+        bcv1 = BlockChainView.from_json(j)
+        assert bcv1.node_tuples == bcv.node_tuples
