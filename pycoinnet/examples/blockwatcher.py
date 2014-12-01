@@ -143,7 +143,7 @@ def main():
     )
     parser.add_argument(
         '-d', "--depth", type=int,
-        help="Minimum depth blocks must be buried before being dropped in blockdir", default=1
+        help="Minimum depth blocks must be buried before being dropped in blockdir", default=0
     )
     parser.add_argument( '-l', "--log-file", help="Path to log file", default=None)
     parser.add_argument("blockdir", help='The directory where new blocks are dropped.')
