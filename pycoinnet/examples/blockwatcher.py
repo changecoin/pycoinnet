@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import logging
 import os
+import time
 
 from pycoinnet.InvItem import ITEM_TYPE_BLOCK
 
@@ -88,12 +89,30 @@ def block_processor(change_q, blockfetcher, state_dir, blockdir, depth):
         block_q.put_nowait(item)
         if change_q.qsize() > 0:
             continue
+        if block_q.qsize() <= depth:
+            continue
+
+        # create the time directory
+        while 1:
+            time_dir = str(int(time.time()))
+            timed_blockdir = os.path.join(blockdir, time_dir)
+            tmp_timed_blockdir = timed_blockdir + ".tmp"
+            if not os.path.exists(timed_blockdir) and not os.path.exists(tmp_timed_blockdir):
+                break
+            yield from asyncio.sleep(1)
+        os.mkdir(tmp_timed_blockdir)
+
+        writ_count = 0
         while block_q.qsize() > depth:
             # we have blocks that are buried and ready to write
             future, block_hash, block_index = yield from block_q.get()
             block = yield from asyncio.wait_for(future, timeout=None)
-            write_block_to_disk(blockdir, block, block_index)
+            write_block_to_disk(tmp_timed_blockdir, block, block_index)
             update_last_processed_block(state_dir, block_index)
+            writ_count += 1
+            if writ_count >= 100:
+                break
+        os.rename(tmp_timed_blockdir, timed_blockdir)
 
 @asyncio.coroutine
 def run_peer(peer, fetcher, fast_forward_add_peer, blockfetcher, inv_collector, blockhandler):
