@@ -20,6 +20,7 @@ setup(
     entry_points = { 'console_scripts':
         [
             'blockwatcher = pycoinnet.examples.blockwatcher:main',
+            'blockloader = pycoinnet.examples.blockloader:main',
         ]
     },
     install_requires=REQUIREMENTS,
